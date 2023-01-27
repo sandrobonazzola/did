@@ -1,0 +1,8 @@
+summary:
+    Check basic functionality
+discover:
+    how: fmf
+provision:
+    how: local
+execute:
+    how: tmt
