@@ -150,7 +150,14 @@ class Issue(object):
                         "fields": "summary,comment",
                         "maxResults": MAX_RESULTS,
                         "startAt": batch * MAX_RESULTS})))
-            data = response.json()
+            try:
+                data = response.json()
+            except requests.exceptions.JSONDecodeError as decode_error:
+                raise ReportError(
+                    f"Failed to decode Jira query '{query}' response. "
+                    f"Received response was: {response.text}. "
+                    f"Error reported: {decode_error}"
+                    )
             if not response.ok:
                 try:
                     error = " ".join(data["errorMessages"])
@@ -161,7 +168,8 @@ class Issue(object):
                     f"The reason was '{response.reason}' "
                     f"and the error was '{error}'.")
             log.debug("Batch {0} result: {1} fetched".format(
-                batch, listed(data["issues"], "issue")))
+                batch, listed(data["issues"], "issue"))
+                )
             log.data(pretty(data))
             issues.extend(data["issues"])
             # If all issues fetched, we're done
