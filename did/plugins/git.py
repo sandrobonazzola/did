@@ -50,7 +50,15 @@ class GitRepo(object):
             command.append("--name-only")
         log.info("Checking commits in {0}".format(self.path))
         log.details(pretty(command))
-
+        # Pull
+        try:
+            process = subprocess.Popen(
+                ["git", "pull"], cwd=self.path, encoding='utf-8',
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        except OSError as error:
+            log.debug(error)
+            raise did.base.ReportError(
+                "Unable to access git repo '{0}'".format(self.path))
         # Get the commit messages
         try:
             process = subprocess.Popen(
