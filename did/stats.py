@@ -2,6 +2,7 @@
 
 """ Stats & StatsGroup, the core of the data gathering """
 
+import re
 import xmlrpc.client
 
 import did.base
@@ -240,10 +241,10 @@ class UserStats(StatsGroup):
         for stat in self.stats:
             stat.add_option(parser)
 
-
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #  Header & Footer
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 
 class EmptyStats(Stats):
     """ Custom stats group for header & footer """
@@ -253,7 +254,10 @@ class EmptyStats(Stats):
 
     def show(self):
         """ Name only for empty stats """
-        utils.item(self.name, options=self.options)
+        # Convert escaped new lines into real new lines
+        # (in order to support custom subitems for each item)
+        item = re.sub(r"\\n", "\n", self.name)
+        utils.item(item, options=self.options)
 
     def fetch(self):
         """ Nothing to do for empty stats """

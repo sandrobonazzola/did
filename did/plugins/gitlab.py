@@ -109,7 +109,7 @@ class GitLab(object):
 
     def get_project_mr(self, project_id, mr_id):
         mrs = self.get_project_mrs(project_id)
-        mr = next(filter(lambda x: x['id'] == mr_id, mrs))
+        mr = next(filter(lambda x: x['id'] == mr_id, mrs), None)
         return mr
 
     def get_project_mrs(self, project_id):
@@ -121,7 +121,7 @@ class GitLab(object):
 
     def get_project_issue(self, project_id, issue_id):
         issues = self.get_project_issues(project_id)
-        issue = next(filter(lambda x: x['id'] == issue_id, issues))
+        issue = next(filter(lambda x: x['id'] == issue_id, issues), None)
         return issue
 
     def get_project_issues(self, project_id):
@@ -163,9 +163,10 @@ class GitLab(object):
 class Issue(object):
     """ GitLab Issue """
 
-    def __init__(self, data, gitlabapi):
+    def __init__(self, data, parent):
+        self.parent = parent
         self.data = data
-        self.gitlabapi = gitlabapi
+        self.gitlabapi = parent.gitlab
         self.project = self.gitlabapi.get_project(data['project_id'])
         self.id = self.iid()
         self.title = data['target_title']
@@ -176,9 +177,22 @@ class Issue(object):
 
     def __str__(self):
         """ String representation """
-        return "{0}#{1} - {2}".format(
-            self.project['path_with_namespace'],
-            str(self.id).zfill(PADDING), self.title)
+        if self.parent.options.format == "markdown":
+            endpoint = "merge_requests"
+            if self.data['target_type'] == 'Issue' or (
+                    self.data['target_type'] == 'Note'
+                    and self.data['note']['noteable_type'] == 'Issue'
+                    ):
+                endpoint = "issues"
+            return "[{1}#{3}]({0}/{1}/-/{2}/{3}) - {4}".format(
+                self.gitlabapi.url,
+                self.project['path_with_namespace'],
+                endpoint,
+                str(self.id), self.title)
+        else:
+            return "{0}#{1} - {2}".format(
+                self.project['path_with_namespace'],
+                str(self.id).zfill(PADDING), self.title)
 
 
 class MergeRequest(Issue):
@@ -192,9 +206,15 @@ class Note(Issue):
 
     def iid(self):
         if self.data['note']['noteable_type'] == 'Issue':
-            return self.gitlabapi.get_project_issue(
+            issue = self.gitlabapi.get_project_issue(
                 self.data['project_id'],
-                self.data['note']['noteable_id'])['iid']
+                self.data['note']['noteable_id'])
+
+            # `noteable_type` is `Issue` even for `WorkItem`s, which
+            # aren't returned by `get_project_issue()`
+            if issue is not None:
+                return issue['iid']
+            return 'unknown'
         elif self.data['note']['noteable_type'] == 'MergeRequest':
             return self.gitlabapi.get_project_mr(
                 self.data['project_id'],
@@ -217,7 +237,7 @@ class IssuesCreated(Stats):
             self.user.login, self.options.since, self.options.until,
             'Issue', 'opened')
         self.stats = [
-            Issue(issue, self.parent.gitlab)
+            Issue(issue, self.parent)
             for issue in results]
 
 
@@ -231,7 +251,7 @@ class IssuesCommented(Stats):
             self.user.login, self.options.since, self.options.until,
             'Note', 'commented on')
         self.stats = [
-            Note(issue, self.parent.gitlab)
+            Note(issue, self.parent)
             for issue in results
             if issue['note']['noteable_type'] == 'Issue']
 
@@ -246,7 +266,7 @@ class IssuesClosed(Stats):
             self.user.login, self.options.since, self.options.until,
             'Issue', 'closed')
         self.stats = [
-            Issue(issue, self.parent.gitlab)
+            Issue(issue, self.parent)
             for issue in results]
 
 
@@ -260,7 +280,7 @@ class MergeRequestsCreated(Stats):
             self.user.login, self.options.since, self.options.until,
             'MergeRequest', 'opened')
         self.stats = [
-            MergeRequest(mr, self.parent.gitlab)
+            MergeRequest(mr, self.parent)
             for mr in results]
 
 
@@ -274,7 +294,7 @@ class MergeRequestsCommented(Stats):
             self.user.login, self.options.since, self.options.until,
             'Note', 'commented on')
         self.stats = [
-            Note(issue, self.parent.gitlab)
+            Note(issue, self.parent)
             for issue in results
             if issue['note']['noteable_type'] == 'MergeRequest']
 
@@ -289,7 +309,7 @@ class MergeRequestsClosed(Stats):
             self.user.login, self.options.since, self.options.until,
             'MergeRequest', 'accepted')
         self.stats = [
-            MergeRequest(mr, self.parent.gitlab)
+            MergeRequest(mr, self.parent)
             for mr in results]
 
 
@@ -303,7 +323,7 @@ class MergeRequestsApproved(Stats):
             self.user.login, self.options.since, self.options.until,
             'MergeRequest', 'approved')
         self.stats = [
-            MergeRequest(mr, self.parent.gitlab)
+            MergeRequest(mr, self.parent)
             for mr in results]
 
 
@@ -356,7 +376,7 @@ class GitLabStats(StatsGroup):
                 name="Merge requests created on {0}".format(option)),
             MergeRequestsCommented(
                 option=option + "-merge-requests-commented", parent=self,
-                name="Issues commented on {0}".format(option)),
+                name="Merge requests commented on {0}".format(option)),
             MergeRequestsApproved(
                 option=option + "-merge-requests-approved", parent=self,
                 name="Merge requests approved on {0}".format(option)),

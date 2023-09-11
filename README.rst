@@ -86,12 +86,13 @@ The default output is plain text of maximum width 79 characters.
 This can be adjusted using the ``--width`` parameter. To disable
 shortening altogether use ``--width=0``. The default width value
 can be saved in the config file as well. Use ``--format=wiki`` to
-enable simple MoinMoin wiki syntax. For stats which support them,
-``--brief`` and ``--verbose`` can be used to specify a different
-level of detail to be shown.
+enable simple MoinMoin wiki syntax or ``--format=markdown`` to
+enable markdown syntax. For stats which support them, ``--brief``
+and ``--verbose`` can be used to specify a different level of
+detail to be shown.
 
---format=FMT
-    Output style, possible values: text (default) or wiki
+--format {text,markdown,wiki}
+    Output style, default: text
 
 --width=WIDTH
     Maximum width of the report output (default: 79)
@@ -228,7 +229,8 @@ Christopher Sams, Thomas Heute, Giulio Fidente, Han Han, Qiao
 Zhao, Henrique Ferreiro, Jakub Vávra, Luigi Toscano, Lukáš
 Zapletal, Maryna Nalbandian, Dominika Hoďovská, Jakub Haruda,
 Han Han, Štěpán Němec, Evgeny Fedin, Mikel Olasagasti Uranga,
-Miloš Malík, Jeffrey Bastian, Côme Chilliet and Konrad Kleine.
+Miloš Malík, Jeffrey Bastian, Côme Chilliet, Marcin Juszkiewicz,
+Tomáš Kopeček, Konrad Kleine, Sandro Bonazzola and Morgan Weetman.
 
 
 Copyright
@@ -247,9 +249,6 @@ Status
 
 .. image:: https://badge.fury.io/py/did.svg
     :target: http://badge.fury.io/py/did
-
-.. image:: https://travis-ci.org/psss/did.svg?branch=master
-    :target: https://travis-ci.org/psss/did
 
 .. image:: https://coveralls.io/repos/github/psss/did/badge.svg
     :target: https://coveralls.io/github/psss/did
