@@ -92,7 +92,7 @@ def test_git_nothing():
 
 def test_git_invalid():
     """ Invalid git repo """
-    did.base.Config(CONFIG.format("/tmp"))
+    did.base.Config(CONFIG.format("/tmp"))  # noqa: S108
     try:
         did.cli.main(INTERVAL)
     except SystemExit:

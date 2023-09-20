@@ -291,7 +291,7 @@ class TestGetToken(unittest.TestCase):
         token = str(uuid4())
         config = {"mytoken": token}
         self.assertIsNone(get_token(config))
-        self.assertEqual(get_token(config, token_key="mytoken"), token)
+        self.assertEqual(get_token(config, token_key="mytoken"), token)  # noqa: S106
 
     def test_get_token_file(self):
         """ Test getting a token from a file """
@@ -302,7 +302,7 @@ class TestGetToken(unittest.TestCase):
 
     def test_get_token_file_empty(self):
         """ Test getting a token from a file with just whitespace. """
-        token_in_file = "   "
+        token_in_file = "   "  # noqa: S105
         with self.get_token_as_file(token_in_file) as filename:
             config = {"token_file": filename}
             self.assertIsNone(get_token(config))
@@ -321,7 +321,7 @@ class TestGetToken(unittest.TestCase):
         with self.get_token_as_file(token_in_file) as filename:
             config = {"mytoken_file": filename}
             self.assertEqual(
-                get_token(
+                get_token(  # noqa: S106
                     config,
                     token_file_key="mytoken_file"),
                 token_in_file)
