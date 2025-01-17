@@ -45,7 +45,7 @@ class WikiChanges(Stats):
         except (xmlrpc.client.Error, OSError) as error:
             raise ReportError(
                 f"Unable to fetch wiki changes from '{self.url}' "
-                f"because of '{error}'.")
+                f"because of '{error}'.") from error
         for change in changes:
             if (change["author"] == self.user.login
                     and change["lastModified"] < self.options.until.date):

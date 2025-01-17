@@ -107,9 +107,9 @@ class BodhiStats(StatsGroup):
         # Check server url
         try:
             self.url = config['url']
-        except KeyError:
+        except KeyError as key_err:
             raise ReportError(
-                'No Bodhi url set in the [{0}] section'.format(option))
+                'No Bodhi url set in the [{0}] section'.format(option)) from key_err
         self.bodhi = Bodhi(self.url)
         # Create the list of stats
         self.stats = [

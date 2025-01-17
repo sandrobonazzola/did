@@ -51,7 +51,9 @@ class Pagure(object):
                 log.data("Response headers:\n{0}".format(response.headers))
             except requests.RequestException as error:
                 log.error(error)
-                raise ReportError("Pagure search {0} failed.".format(self.url))
+                raise ReportError(
+                    "Pagure search {0} failed.".format(
+                        self.url)) from error
             data = response.json()
             objects = data[result_field]
             log.debug("Result: %s fetched", listed(len(objects), "item"))
@@ -179,9 +181,9 @@ class PagureStats(StatsGroup):
         # Check server url
         try:
             self.url = config['url']
-        except KeyError:
+        except KeyError as key_err:
             raise ReportError(
-                'No Pagure url set in the [{0}] section'.format(option))
+                'No Pagure url set in the [{0}] section'.format(option)) from key_err
         # Check authorization token
         self.token = get_token(config)
         self.pagure = Pagure(self.url, self.token)

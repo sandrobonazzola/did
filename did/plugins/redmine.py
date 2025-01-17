@@ -89,9 +89,9 @@ class RedmineStats(StatsGroup):
         # Check server url
         try:
             self.url = config["url"]
-        except KeyError:
+        except KeyError as exc:
             raise ReportError(
-                "No Redmine url set in the [{0}] section".format(option))
+                "No Redmine url set in the [{0}] section".format(option)) from exc
         try:
             self.activity_days = datetime.timedelta(config["activity_days"])
         except KeyError:

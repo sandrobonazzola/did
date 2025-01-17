@@ -67,12 +67,12 @@ class Trac(object):
             result = parent.proxy.ticket.query(query)
         except xmlrpc.client.Fault as error:
             log.error("An error encountered, while searching for tickets.")
-            raise ReportError(error)
+            raise ReportError(error) from error
         except xmlrpc.client.ProtocolError as error:
             log.debug(error)
             log.error("Trac url: %s", parent.url)
             raise ReportError(
-                "Unable to contact Trac server. Is the url above correct?")
+                "Unable to contact Trac server. Is the url above correct?") from error
         log.debug("Search result: %s", result)
         # Fetch tickets and their history using multicall
         multicall = xmlrpc.client.MultiCall(parent.proxy)

@@ -107,7 +107,7 @@ class Config(object):
             log.debug(error)
             Config.parser = None
             raise ConfigFileError(
-                "Unable to read the config file '{0}'.".format(path))
+                "Unable to read the config file '{0}'.".format(path)) from error
 
     @property
     def plugins(self):
@@ -123,9 +123,9 @@ class Config(object):
         month = self.parser.get("general", "quarter", fallback=1)
         try:
             month = int(month) % 3
-        except ValueError:
+        except ValueError as exc:
             raise ConfigError(
-                f"Invalid quarter start '{month}', should be integer.")
+                f"Invalid quarter start '{month}', should be integer.") from exc
         return month
 
     @property
@@ -136,11 +136,11 @@ class Config(object):
         except NoSectionError as error:
             log.debug(error)
             raise ConfigFileError(
-                "No general section found in the config file.")
+                "No general section found in the config file.") from error
         except NoOptionError as error:
             log.debug(error)
             raise ConfigFileError(
-                "No email address defined in the config file.")
+                "No email address defined in the config file.") from error
 
     @property
     def width(self):
@@ -240,7 +240,8 @@ class Date(object):
             except ValueError as error:
                 log.debug(error)
                 raise OptionError(
-                    "Invalid date format: '{0}', use YYYY-MM-DD.".format(date))
+                    "Invalid date format: '{0}', use YYYY-MM-DD.".format(date)
+                    ) from error
         self.datetime = datetime.datetime(
             self.date.year, self.date.month, self.date.day, 0, 0, 0)
 
@@ -486,9 +487,9 @@ class User(object):
                 aliases = dict([
                     re.split(r"\s*:\s*", definition, 1)
                     for definition in re.split(r"\s*;\s*", aliases.strip())])
-            except ValueError:
+            except ValueError as exc:
                 raise ConfigError(
-                    "Invalid alias definition: '{0}'".format(aliases))
+                    "Invalid alias definition: '{0}'".format(aliases)) from exc
             if stats in aliases:
                 if "@" in aliases[stats]:
                     email = aliases[stats]

@@ -134,14 +134,13 @@ class RequestTrackerStats(StatsGroup):
         config = dict(Config().section(option))
         try:
             self.url = config["url"]
-        except KeyError:
-            raise ReportError(
-                "No url in the [{0}] section".format(option))
+        except KeyError as exc:
+            raise ReportError("No url in the [{0}] section".format(option)) from exc
         try:
             self.prefix = config["prefix"]
-        except KeyError:
+        except KeyError as exc:
             raise ReportError(
-                "No prefix set in the [{0}] section".format(option))
+                "No prefix set in the [{0}] section".format(option)) from exc
 
         # Save Ticket class as attribute to allow customizations by
         # descendant class and set up the RequestTracker investigator

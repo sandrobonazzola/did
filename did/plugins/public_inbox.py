@@ -277,8 +277,9 @@ class PublicInboxStats(StatsGroup):
         config = dict(Config().section(option))
         try:
             self.url = config["url"]
-        except KeyError:
-            raise ReportError("No url in the [{0}] section.".format(option))
+        except KeyError as key_err:
+            raise ReportError(
+                "No url in the [{0}] section.".format(option)) from key_err
 
         self.public_inbox = PublicInbox(self.parent, self.user, self.url)
         self.stats = [

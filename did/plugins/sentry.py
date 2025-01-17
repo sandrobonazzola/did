@@ -119,7 +119,7 @@ class Sentry(object):
             except requests.RequestException as error:
                 log.debug(error)
                 raise ReportError(
-                    'Failed to fetch Sentry activities from {0}'.format(url))
+                    'Failed to fetch Sentry activities from {0}'.format(url)) from error
             # Check for possible next page
             try:
                 url = NEXT_PAGE.search(response.headers['Link']).groups()[0]

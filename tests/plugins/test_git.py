@@ -95,8 +95,8 @@ def test_git_invalid():
     did.base.Config(CONFIG.format("/tmp"))
     try:
         did.cli.main(INTERVAL)
-    except SystemExit:
-        raise RuntimeError("Expected warning only")
+    except SystemExit as exc:
+        raise RuntimeError("Expected warning only") from exc
 
 
 def test_git_non_existent():

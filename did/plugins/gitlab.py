@@ -124,9 +124,10 @@ class GitLab(object):
                 ) from jde
         try:
             return result[0]
-        except (IndexError, KeyError):
+        except (IndexError, KeyError) as exc:
             raise ReportError(
-                f"Unable to find user '{username}' on {self.url}.")
+                f"Unable to find user '{username}' on {
+                    self.url}.") from exc
 
     def get_project(self, project_id):
         if project_id not in self.projects:
@@ -363,9 +364,9 @@ class GitLabStats(StatsGroup):
         # Check server url
         try:
             self.url = config["url"]
-        except KeyError:
+        except KeyError as exc:
             raise ReportError(
-                "No GitLab url set in the [{0}] section".format(option))
+                "No GitLab url set in the [{0}] section".format(option)) from exc
         # Check authorization token
         self.token = get_token(config)
         if self.token is None:

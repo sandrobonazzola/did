@@ -232,10 +232,10 @@ class UserStats(StatsGroup):
             if 'order' in data:
                 try:
                     obj.order = int(data['order'])
-                except ValueError:
+                except ValueError as exc:
                     raise did.base.GeneralError(
                         f"Invalid order '{data['order']}' "
-                        f"in the '{section}' section.")
+                        f"in the '{section}' section.") from exc
             results.append(obj)
         return sorted(results, key=lambda x: x.order)
 

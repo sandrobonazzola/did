@@ -91,7 +91,7 @@ class GitHub(object):
                 log.debug(f"Response headers:\n{response.headers}")
             except requests.exceptions.RequestException as error:
                 log.debug(error)
-                raise ReportError(f"GitHub search on {self.url} failed.")
+                raise ReportError(f"GitHub search on {self.url} failed.") from error
 
             # Check if credentials are valid
             log.debug(f"GitHub status code: {response.status_code}")
@@ -117,7 +117,7 @@ class GitHub(object):
                 result.extend(data)
             except requests.exceptions.JSONDecodeError as error:
                 log.debug(error)
-                raise ReportError(f"GitHub JSON failed: {response.text}.")
+                raise ReportError(f"GitHub JSON failed: {response.text}.") from error
 
             # Update url to the next page, break if no next page
             # provided
@@ -278,9 +278,9 @@ class GitHubStats(StatsGroup):
         # Check server url
         try:
             self.url = config["url"]
-        except KeyError:
+        except KeyError as keyerr:
             raise ReportError(
-                "No github url set in the [{0}] section".format(option))
+                "No github url set in the [{0}] section".format(option)) from keyerr
 
         # Check authorization token
         self.token = get_token(config)

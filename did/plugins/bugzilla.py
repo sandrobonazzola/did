@@ -101,7 +101,7 @@ class Bugzilla(object):
             log.error("An error encountered, while searching for bugs.")
             log.debug(error)
             raise ReportError(
-                "Have you baked cookies using the 'bugzilla login' command?")
+                "Have you baked cookies using the 'bugzilla login' command?") from error
         log.debug("Search result:")
         log.debug(pretty(result))
         bugs = dict((bug.id, bug) for bug in result)
@@ -647,9 +647,9 @@ class BugzillaStats(StatsGroup):
         # Check Bugzilla instance url
         try:
             self.url = config["url"]
-        except KeyError:
+        except KeyError as exc:
             raise ReportError(
-                "No bugzilla url set in the [{0}] section".format(option))
+                "No bugzilla url set in the [{0}] section".format(option)) from exc
 
         # SSL verification
         if "ssl_verify" in config:
@@ -658,16 +658,16 @@ class BugzillaStats(StatsGroup):
                     config["ssl_verify"])
             except Exception as error:
                 raise ReportError(
-                    "Error when parsing 'ssl_verify': {0}".format(error))
+                    "Error when parsing 'ssl_verify': {0}".format(error)) from error
         else:
             self.ssl_verify = SSL_VERIFY
 
         # Make sure we have prefix set
         try:
             self.prefix = config["prefix"]
-        except KeyError:
+        except KeyError as exc:
             raise ReportError(
-                "No prefix set in the [{0}] section".format(option))
+                "No prefix set in the [{0}] section".format(option)) from exc
         # Check for customized list of resolutions
         try:
             self.resolutions = [

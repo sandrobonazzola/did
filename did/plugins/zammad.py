@@ -54,7 +54,8 @@ class Zammad(object):
         except urllib.error.URLError as error:
             log.debug(error)
             raise ReportError(
-                "Zammad search on {0} failed.".format(self.url))
+                "Zammad search on {0} failed.".format(
+                    self.url)) from error
         result = json.loads(response.read())["assets"]
         try:
             result = result["Ticket"]
@@ -116,9 +117,9 @@ class ZammadStats(StatsGroup):
         # Check server url
         try:
             self.url = config["url"]
-        except KeyError:
+        except KeyError as exc:
             raise ReportError(
-                "No zammad url set in the [{0}] section".format(option))
+                "No zammad url set in the [{0}] section".format(option)) from exc
         # Check authorization token
         self.token = get_token(config)
         self.zammad = Zammad(self.url, self.token)

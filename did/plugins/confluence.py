@@ -268,15 +268,15 @@ class ConfluenceStats(StatsGroup):
                 try:
                     self.token_expiration = int(config["token_expiration"])
                     self.token_name = config["token_name"]
-                except KeyError:
+                except KeyError as exc:
                     raise ReportError(
                         "The ``token_name`` and ``token_expiration`` "
                         "must be set at the same time in "
-                        "[{0}] section.".format(option))
-                except ValueError:
+                        "[{0}] section.".format(option)) from exc
+                except ValueError as val_err:
                     raise ReportError(
                         "The ``token_expiration`` must contain number, used in "
-                        "[{0}] section.".format(option))
+                        "[{0}] section.".format(option)) from val_err
             else:
                 self.token_expiration = self.token_name = None
         # SSL verification
@@ -286,7 +286,7 @@ class ConfluenceStats(StatsGroup):
                     config["ssl_verify"])
             except Exception as error:
                 raise ReportError(
-                    "Error when parsing 'ssl_verify': {0}".format(error))
+                    "Error when parsing 'ssl_verify': {0}".format(error)) from error
         else:
             self.ssl_verify = SSL_VERIFY
 
@@ -333,7 +333,7 @@ class ConfluenceStats(StatsGroup):
             except requests.exceptions.HTTPError as error:
                 log.error(error)
                 raise ReportError(
-                    "Confluence authentication failed. Try kinit.")
+                    "Confluence authentication failed. Try kinit.") from error
             if self.token_expiration:
                 response = self._session.get(
                     "{0}/rest/pat/latest/tokens".format(self.url),

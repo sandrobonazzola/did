@@ -73,18 +73,19 @@ class KojiStats(StatsGroup):
         self.config = dict(did.base.Config().section(option))
         try:
             url = self.config['url']
-        except KeyError:
+        except KeyError as exc:
             raise did.base.ReportError(
-                "No koji url set in the [{0}] section".format(option))
+                "No koji url set in the [{0}] section".format(option)) from exc
         server = koji.ClientSession(url, opts=self.config)
         try:
             user = server.getUser(self.config['login'], strict=True)
-        except KeyError:
+        except KeyError as keyerr:
             raise did.base.ReportError(
-                "No koji user set in the [{0}] section".format(option))
-        except koji.GenericError:
+                "No koji user set in the [{0}] section".format(option)) from keyerr
+        except koji.GenericError as ge_err:
             raise did.base.ReportError(
-                "Non-existent koji user set in the [{0}] section".format(option))
+                "Non-existent koji user set in the [{0}] section".format(option)
+                ) from ge_err
 
         name = self.config.get('name', url)
 
