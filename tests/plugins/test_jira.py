@@ -1,24 +1,22 @@
 # coding: utf-8
 """ Tests for the Jira plugin """
 
-import os
-import sys
+import pytest
 
 import did.base
 import did.cli
 from did.base import ReportError
 from did.plugins.jira import JiraStats
 
-sys.path.insert(1, os.path.join(os.path.dirname(__file__), "..", ".."))
-
-
 CONFIG = """
+[general]
+email = mail@example.com
 [jira]
 type = jira
 prefix = JBEAP
 project = JBEAP
-url = https://issues.jboss.org
-auth_url = https://issues.jboss.org/rest/auth/latest/session
+url = https://issues.redhat.com/
+auth_url = https://issues.redhat.com/rest/auth/latest/session
 """
 
 
@@ -30,6 +28,16 @@ def test_config_gss_auth():
     """  Test default authentication configuration """
     did.base.Config(CONFIG)
     JiraStats("jira")
+
+
+def test_wrong_auth():
+    """  Test wrong authentication type configuration """
+    did.base.Config(f"""
+{CONFIG}
+auth_type = OAuth2
+""")
+    with pytest.raises(ReportError, match=r"Unsupported authentication type"):
+        JiraStats("jira")
 
 
 def test_config_basic_auth():
@@ -95,14 +103,53 @@ ssl_verify = ss
 """)
 
 
+def test_ssl_verify():
+    """Test ssl_verify """
+    did.base.Config(f"""
+{CONFIG}
+ssl_verify = False
+""")
+    with pytest.raises(ReportError, match=r"Jira authentication failed"):
+        # expected to fail authentication as we are not providing valid
+        # credentials
+        did.cli.main("today")
+
+
+def test_jira_missing_url():
+    """ Missing URL """
+    assert_conf_error(CONFIG.replace("url = https://issues.redhat.com/\n", ""))
+
+
+def test_jira_wrong_url():
+    """ Missing URL """
+    did.base.Config(f"""{did.base.Config.example()}
+[jira]
+type = jira
+prefix = JBEAP
+project = JBEAP
+url = https://localhost
+""")
+    with pytest.raises(ReportError, match=r"Failed to connect to Jira"):
+        did.cli.main("today")
+
+
+def test_jira_use_scriptrunner_config_error():
+    """ use_scriptrunner False and missing project """
+    did.base.Config(f"""{did.base.Config.example()}
+[jira]
+type = jira
+prefix = JBEAP
+use_scriptrunner = False
+url = https://issues.redhat.com/
+auth_url = https://issues.redhat.com/rest/auth/latest/session
+""")
+    with pytest.raises(ReportError,
+                       match=r"When scriptrunner is disabled.*has to be defined.*."):
+        JiraStats("jira")
+
+
 def assert_conf_error(config, expected_error=ReportError):
     """ Test given config and check that given error type is raised """
-    print(config)
     did.base.Config(config)
-    dict(did.base.Config().section("jira"))
-    error = None
-    try:
+    with pytest.raises(expected_error):
         JiraStats("jira")
-    except ReportError as e:
-        error = e
-    assert isinstance(error, expected_error)
