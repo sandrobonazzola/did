@@ -1,9 +1,11 @@
 # coding: utf-8
 
+import logging
 import os
 import sys
 
 import pytest
+from _pytest.logging import LogCaptureFixture
 
 import did
 import did.utils
@@ -78,16 +80,85 @@ def test_import_failure():
         did.utils._import("blah", False)
 
 
-def test_header():
-    assert did.utils.header
+def test_header(capsys):
+    did.utils.header("test", separator='-', separator_width=2)
+    captured = capsys.readouterr()
+    assert captured.out == "\n--\n test\n--\n"
 
 
 def test_shorted():
-    assert did.utils.shorted
+    res = did.utils.shorted("this text is longer than 6\nthis is also longer", width=6)
+    assert res == "this...\nthis..."
 
 
-def test_item():
-    assert did.utils.item
+def test_item_no_options(capsys):
+    did.utils.item("this is level 0 text", level=0, options=None)
+    captured = capsys.readouterr()
+    assert captured.out == "* this is level 0 text\n"
+
+    did.utils.item("this is level 1 text", level=1, options=None)
+    captured = capsys.readouterr()
+    assert captured.out == "    * this is level 1 text\n"
+
+
+def test_item_not_brief(capsys):
+    options = did.cli.Options()
+    options.brief = False
+    options.format = "text"
+    options.width = 100
+    did.utils.item("this is level 0 text", level=0, options=options)
+    captured = capsys.readouterr()
+    assert captured.out == "\n* this is level 0 text\n"
+
+    did.utils.item("this is level 1 text", level=1, options=options)
+    captured = capsys.readouterr()
+    assert captured.out == "    * this is level 1 text\n"
+
+
+def test_item_brief_text(capsys):
+    options = did.cli.Options()
+    options.brief = True
+    options.format = "text"
+    options.width = 100
+
+    did.utils.item("this is level 0 text", level=0, options=options)
+    captured = capsys.readouterr()
+    assert captured.out == "* this is level 0 text\n"
+
+    did.utils.item("this is level 1 text", level=1, options=options)
+    captured = capsys.readouterr()
+    # brief shows only level 0
+    assert captured.out == ""
+
+
+def test_item_markdown(capsys):
+    options = did.cli.Options()
+    options.brief = False
+    options.format = "markdown"
+    options.width = 100
+
+    did.utils.item("this is level 0 text", level=0, options=options)
+    captured = capsys.readouterr()
+    assert captured.out == "\n* this is level 0 text\n"
+
+    did.utils.item("this is level 1 text", level=1, options=options)
+    captured = capsys.readouterr()
+    assert captured.out == "  * this is level 1 text\n"
+
+
+def test_item_wiki(capsys):
+    options = did.cli.Options()
+    options.brief = False
+    options.format = "wiki"
+    options.width = 100
+
+    did.utils.item("this is level 0 text", level=0, options=options)
+    captured = capsys.readouterr()
+    assert captured.out == "\n * this is level 0 text\n"
+
+    did.utils.item("this is level 1 text", level=1, options=options)
+    captured = capsys.readouterr()
+    assert captured.out == "    * this is level 1 text\n"
 
 
 def test_pluralize():
@@ -115,31 +186,75 @@ def test_listed():
 #  Logging
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-def test_info():
-    assert did.utils.info
+def test_info(capsys):
     did.utils.info("something")
+    captured = capsys.readouterr()
+    assert captured.err == "something\n"
     did.utils.info("no-new-line", newline=False)
+    captured = capsys.readouterr()
+    assert captured.err == "no-new-line"
 
 
-def test_logging_class_exists():
-    assert did.utils.Logging
+def test_logging(capsys, caplog: LogCaptureFixture):
+    mylogging = did.utils.Logging('test')
+    log = mylogging.logger
+    mylogging.set(did.utils.LOG_INFO)
+    assert mylogging.get() == did.utils.LOG_INFO
+    log.info("This is printed")
+    captured = capsys.readouterr()
+    assert captured.err == "[INFO] This is printed\n"
+
+    with caplog.at_level(logging.DEBUG, "test"):
+        assert mylogging.get() == did.utils.LOG_DEBUG
+        log.debug("debug")
+        assert "debug" in caplog.text
 
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #  Coloring
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-def test_coloring_class_exists():
-    assert did.utils.Coloring
+def test_coloring():
+    mycoloring = did.utils.Coloring()
+    assert not mycoloring.enabled()
+    assert mycoloring.get() is did.utils.ColorMode.COLOR_AUTO
+    mycoloring.set(did.utils.ColorMode.COLOR_ON)
+    assert mycoloring.get() is did.utils.ColorMode.COLOR_ON
+    # a call to set without arguments must not change the mode
+    # if already set
+    mycoloring.set()
+    assert mycoloring.get() is did.utils.ColorMode.COLOR_ON
+    # fails with invalid values
+    with pytest.raises(RuntimeError):
+        mycoloring.set(4)
 
 
 def test_color_function_exists():
-    assert did.utils.color
-
+    # No color sets
+    res = did.utils.color(
+        "text", text_color=None, background=None, light=False, enabled=True)
+    assert res == "\033[0mtext\033[1;m"
+    # Disabled
+    res = did.utils.color(
+        "text", text_color=None, background=None, light=False, enabled=False)
+    assert res == "text"
+    # Unknown color
+    with pytest.raises(KeyError):
+        did.utils.color(
+            "text", text_color="rainbow", background=None, light=False, enabled=True)
+    # Known color
+    res = did.utils.color(
+        "text", text_color="red", background=None, light=False, enabled=True)
+    assert res == "\033[0;31mtext\033[1;m"
+    # Light version
+    res = did.utils.color(
+        "text", text_color="red", background=None, light=True, enabled=True)
+    assert res == "\033[1;31mtext\033[1;m"
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #  strtobool
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 
 def test_strtobool():
     # True

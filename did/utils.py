@@ -1,13 +1,16 @@
 """ Logging, config, constants & utilities """
 
+import enum
 import importlib
 import logging
 import os
 import pkgutil
 import re
 import sys
+from argparse import Namespace
 # pylint:disable=unused-import
 from pprint import pformat as pretty  # noqa: F401 (used by other modules)
+from typing import Literal, Optional
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #  Constants
@@ -19,10 +22,13 @@ MAX_WIDTH = 79
 # Default separator character
 DEFAULT_SEPARATOR = "~"
 
+
 # Coloring
-COLOR_ON = 1
-COLOR_OFF = 0
-COLOR_AUTO = 2
+class ColorMode(enum.Enum):
+    COLOR_ON = 1
+    COLOR_OFF = 0
+    COLOR_AUTO = 2
+
 
 # Logging
 LOG_ERROR = logging.ERROR
@@ -162,13 +168,16 @@ def load_components(*paths, **kwargs):
     return num_loaded
 
 
-def header(text, separator=DEFAULT_SEPARATOR, separator_width=MAX_WIDTH):
+def header(
+        text: str,
+        separator: str = DEFAULT_SEPARATOR,
+        separator_width: int = MAX_WIDTH):
     """ Show text as a header. """
     hr = separator_width * separator
     print(f"\n{hr}\n {text}\n{hr}")
 
 
-def shorted(text, width=MAX_WIDTH):
+def shorted(text: str, width: int = MAX_WIDTH) -> str:
     """
     Shorten text, make sure it's not cut in the middle of a word
 
@@ -214,7 +223,10 @@ def strtobool(value):
         raise ValueError(f"Invalid boolean value '{value}'.") from exception
 
 
-def item(text, level=0, options=None):
+def item(
+        text: str,
+        level: int = 0,
+        options: Optional[Namespace] = None) -> None:
     """ Print indented item. """
     # Extra line before in each section (unless brief)
     if level == 0 and options is not None and not options.brief:
@@ -322,7 +334,7 @@ def split(values, separator=re.compile("[ ,]+")):
     return sum([separator.split(value) for value in values], [])
 
 
-def info(message, newline=True):
+def info(message: str, newline: bool = True) -> None:
     """ Log provided info message to the standard error output """
     sys.stderr.write(message + ("\n" if newline else ""))
 
@@ -391,7 +403,7 @@ class Logging():
                 text_color = "black"
             # Color the log level, use brackets when coloring off
             if Coloring().enabled():
-                level = color(f" {levelname} ", "lightwhite", text_color)
+                level = color(f" {levelname} ", "white", text_color, light=1)
             else:
                 level = f"[{levelname}]"
             return f"{level} {record.getMessage()}"
@@ -419,7 +431,7 @@ class Logging():
             LOG_ALL, message)  # NOQA
         return logger
 
-    def set(self, level=None):
+    def set(self, level: Optional[int] = None) -> None:
         """
         Set the default log level
 
@@ -444,7 +456,7 @@ class Logging():
                 Logging._level = logging.WARN
         self.logger.setLevel(Logging._level)
 
-    def get(self):
+    def get(self) -> int:
         """ Get the current log level """
         return self.logger.level
 
@@ -453,7 +465,18 @@ class Logging():
 #  Coloring
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-def color(text, text_color=None, background=None, light=False, enabled=True):
+# Define the allowed color names as a Literal type
+ColorName = Literal[
+    "black", "red", "green", "yellow",
+    "blue", "magenta", "cyan", "white"]
+
+
+def color(
+        text: str,
+        text_color: Optional[ColorName] = None,
+        background: Optional[ColorName] = None,
+        light: bool = False,
+        enabled: bool = True) -> str:
     """
     Return text in desired color if coloring enabled
 
@@ -465,15 +488,11 @@ def color(text, text_color=None, background=None, light=False, enabled=True):
     # Nothing do do if coloring disabled
     if not enabled:
         return text
-    # Prepare colors (strip 'light' if present in color)
-    if text_color and text_color.startswith("light"):
-        light = True
-        text_color = text_color[5:]
-    text_color = text_color and f";{colors[text_color]}" or ""
-    background = background and f";{colors[background] + 10}" or ""
-    light = (1 if light else 0)
+    text_color_code = text_color and f";{colors[text_color]}" or ""
+    background_code = background and f";{colors[background] + 10}" or ""
+    light_code = (1 if light else 0)
     # Starting and finishing sequence
-    start = f"\033[{light}{text_color}{background}m"
+    start = f"\033[{light_code}{text_color_code}{background_code}m"
     finish = "\033[1;m"
     return "".join([start, text, finish])
 
@@ -482,7 +501,7 @@ class Coloring():
     """ Coloring configuration """
 
     # Default color mode is auto-detected from the terminal presence
-    _mode = None
+    _mode: ColorMode | None = None
     MODES = ["COLOR_OFF", "COLOR_ON", "COLOR_AUTO"]
     # We need only a single config instance
     _instance = None
@@ -493,7 +512,7 @@ class Coloring():
             cls._instance = super(Coloring, cls).__new__(cls, *args, **kwargs)
         return cls._instance
 
-    def __init__(self, mode=None):
+    def __init__(self, mode: Optional[ColorMode] = None):
         """ Initialize the coloring mode """
         # Nothing to do if already initialized
         if self._mode is not None:
@@ -501,7 +520,7 @@ class Coloring():
         # Set the mode
         self.set(mode)
 
-    def set(self, mode=None):
+    def set(self, mode: Optional[ColorMode] = None):
         """
         Set the coloring mode
 
@@ -524,28 +543,31 @@ class Coloring():
                 return
             # Detect from the environment variable COLOR
             try:
-                mode = int(os.environ["COLOR"])
+                mode = ColorMode(int(os.environ["COLOR"]))
             except KeyError:
-                mode = COLOR_AUTO
-        elif mode < 0 or mode > 2:
-            raise RuntimeError(f"Invalid color mode '{mode}'")
-        self._mode = mode
+                mode = ColorMode.COLOR_AUTO
+            except ValueError as ve:
+                raise RuntimeError(f"Invalid color mode '{mode}'") from ve
+        try:
+            self._mode = ColorMode(mode)
+        except ValueError as ve:
+            raise RuntimeError(f"Invalid color mode '{mode}'") from ve
         log.debug(
             "Coloring %s (%s)",
             "enabled" if self.enabled() else "disabled",
-            self.MODES[self._mode]
+            self.MODES[self._mode.value]
             )
 
-    def get(self):
+    def get(self) -> ColorMode | None:
         """ Get the current color mode """
         return self._mode
 
-    def enabled(self):
+    def enabled(self) -> bool:
         """ True if coloring is currently enabled """
         # In auto-detection mode color enabled when terminal attached
-        if self._mode == COLOR_AUTO:
+        if self._mode == ColorMode.COLOR_AUTO:
             return sys.stdout.isatty()
-        return self._mode == COLOR_ON
+        return self._mode == ColorMode.COLOR_ON
 
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
