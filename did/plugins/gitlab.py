@@ -29,6 +29,8 @@ __ https://docs.gitlab.com/ce/api/
 
 """
 
+from __future__ import annotations
+
 from time import sleep
 
 import dateutil
@@ -215,7 +217,7 @@ class GitLab():
 class Issue():
     """ GitLab Issue """
 
-    def __init__(self, data, parent, set_id=None):
+    def __init__(self, data: dict, parent: "GitLabStats", set_id=None):
         self.parent = parent
         self.data = data
         self.gitlabapi: GitLab = parent.gitlab
@@ -427,7 +429,12 @@ class GitLabStats(StatsGroup):
         if not self.ssl_verify:
             urllib3.disable_warnings(InsecureRequestWarning)
         self.gitlab = GitLab(
-            self.url, self.token, self.ssl_verify, timeout=config.get("timeout"))
+            self.url,
+            self.token,
+            self.ssl_verify,
+            timeout=config.get(
+                "timeout",
+                TIMEOUT))
         # Create the list of stats
         self.stats = [
             IssuesCreated(
