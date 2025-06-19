@@ -41,17 +41,16 @@ class Message():
     def __init__(self, msg: mailbox.mboxMessage) -> None:
         self.msg = msg
 
-    def __msg_id(self, keyid: str) -> str:
+    def __msg_id(self, keyid: str) -> str | None:
         msgid = self.msg[keyid]
         if msgid is None:
             return None
-
         return msgid.lstrip("<").rstrip(">")
 
-    def id(self) -> str:
+    def id(self) -> str | None:
         return self.__msg_id("Message-Id")
 
-    def parent_id(self) -> str:
+    def parent_id(self) -> str | None:
         return self.__msg_id("In-Reply-To")
 
     def subject(self) -> str:
@@ -80,12 +79,11 @@ class Message():
 
 
 def _unique_messages(mbox: mailbox.mbox) -> typing.Iterable[Message]:
-    msgs = {}
-    for msg in mbox.values():
-        msg = Message(msg)
+    msgs: dict[str, mailbox.mboxMessage | Message] = {}
+    for mboxmsg in mbox.values():
+        msg: Message = Message(mboxmsg)
         msg_id = msg.id()
-
-        if msg_id not in msgs:
+        if msg_id is not None and msg_id not in msgs:
             msgs[msg_id] = msg
             yield msg
 
