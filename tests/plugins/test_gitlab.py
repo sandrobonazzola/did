@@ -9,6 +9,7 @@ from _pytest.logging import LogCaptureFixture
 
 import did.base
 import did.cli
+from did.utils import log
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #  Constants
@@ -40,7 +41,7 @@ token = {os.getenv(key="GITLAB_TOKEN", default="NoTokenSpecified")}
 
 @pytest.mark.skipif("GITLAB_TOKEN" not in os.environ,
                     reason="No GITLAB_TOKEN environment variable found")
-def test_gitlab_issues_created():
+def test_gitlab_issues_created() -> None:
     """ Created issues """
     did.base.Config(CONFIG)
     option = "--gitlab-issues-created "
@@ -52,7 +53,7 @@ def test_gitlab_issues_created():
 
 @pytest.mark.skipif("GITLAB_TOKEN" not in os.environ,
                     reason="No GITLAB_TOKEN environment variable found")
-def test_gitlab_issues_commented():
+def test_gitlab_issues_commented() -> None:
     """ Commented issues """
     did.base.Config(CONFIG)
     option = "--gitlab-issues-commented "
@@ -64,7 +65,7 @@ def test_gitlab_issues_commented():
 
 @pytest.mark.skipif("GITLAB_TOKEN" not in os.environ,
                     reason="No GITLAB_TOKEN environment variable found")
-def test_gitlab_issues_closed():
+def test_gitlab_issues_closed() -> None:
     """ Closed issues in markdown format """
     did.base.Config(CONFIG)
     option = "--gitlab-issues-closed --format=markdown "
@@ -74,7 +75,7 @@ def test_gitlab_issues_closed():
 
 @pytest.mark.skipif("GITLAB_TOKEN" not in os.environ,
                     reason="No GITLAB_TOKEN environment variable found")
-def test_gitlab_merge_requests_created():
+def test_gitlab_merge_requests_created() -> None:
     """ Created merge requests """
     did.base.Config(CONFIG)
     option = "--gitlab-merge-requests-created "
@@ -86,7 +87,7 @@ def test_gitlab_merge_requests_created():
 
 @pytest.mark.skipif("GITLAB_TOKEN" not in os.environ,
                     reason="No GITLAB_TOKEN environment variable found")
-def test_gitlab_merge_requests_commented():
+def test_gitlab_merge_requests_commented() -> None:
     """ Commented merge requests """
     did.base.Config(CONFIG)
     option = "--gitlab-merge-requests-commented "
@@ -98,21 +99,21 @@ def test_gitlab_merge_requests_commented():
 
 @pytest.mark.skipif("GITLAB_TOKEN" not in os.environ,
                     reason="No GITLAB_TOKEN environment variable found")
-def test_gitlab_paginated_merge_requests_commented(caplog: LogCaptureFixture):
+def test_gitlab_paginated_merge_requests_commented(caplog: LogCaptureFixture) -> None:
     """ Approved merge requests """
     did.base.Config(CONFIG.replace("did.tester", "sandrobonazzola"))
     option = "--gitlab-merge-requests-commented "
-    with caplog.at_level(logging.DEBUG, logger=did.base.log.name):
+    with caplog.at_level(logging.DEBUG, logger=log.name):
         stats = did.cli.main(option + PAGINATED_INTERVAL)[0][0].stats[0].stats[4].stats
         assert "Fetching more paginated data" in caplog.text
     assert any(
-        "CentOS/automotive/src/automotive-image-builder#220" in str(stat)
+        "CentOS/automotive/src/auto-boot-check#005" in str(stat)
         for stat in stats)
 
 
 @pytest.mark.skipif("GITLAB_TOKEN" not in os.environ,
                     reason="No GITLAB_TOKEN environment variable found")
-def test_gitlab_merge_requests_closed():
+def test_gitlab_merge_requests_closed() -> None:
     """ Closed merge requests """
     did.base.Config(CONFIG)
     option = "--gitlab-merge-requests-closed "
@@ -124,7 +125,7 @@ def test_gitlab_merge_requests_closed():
 
 @pytest.mark.skipif("GITLAB_TOKEN" not in os.environ,
                     reason="No GITLAB_TOKEN environment variable found")
-def test_gitlab_merge_requests_approved():
+def test_gitlab_merge_requests_approved() -> None:
     """ Approved merge requests """
     did.base.Config(CONFIG)
     option = "--gitlab-merge-requests-approved "
@@ -135,7 +136,7 @@ def test_gitlab_merge_requests_approved():
         for stat in stats)
 
 
-def test_gitlab_missing_token(caplog: LogCaptureFixture):
+def test_gitlab_missing_token(caplog: LogCaptureFixture) -> None:
     """ Missing token """
     did.base.Config(CONFIG_NOTOKEN)
     with caplog.at_level(logging.ERROR):
@@ -143,7 +144,7 @@ def test_gitlab_missing_token(caplog: LogCaptureFixture):
         assert "Skipping section gitlab due to error: No GitLab token" in caplog.text
 
 
-def test_gitlab_invalid_token(caplog: LogCaptureFixture):
+def test_gitlab_invalid_token(caplog: LogCaptureFixture) -> None:
     """ Invalid token """
     did.base.Config(CONFIG_NOTOKEN + "\ntoken = bad-token")
     with caplog.at_level(logging.ERROR):
@@ -151,7 +152,7 @@ def test_gitlab_invalid_token(caplog: LogCaptureFixture):
         assert "Unable to access" in caplog.text
 
 
-def test_gitlab_missing_url(caplog: LogCaptureFixture):
+def test_gitlab_missing_url(caplog: LogCaptureFixture) -> None:
     """ Missing url """
     did.base.Config(CONFIG.replace("url = https://gitlab.com\n", ""))
     with caplog.at_level(logging.ERROR):
@@ -159,7 +160,7 @@ def test_gitlab_missing_url(caplog: LogCaptureFixture):
         assert "Skipping section gitlab due to error: No GitLab url set" in caplog.text
 
 
-def test_gitlab_wrong_url(caplog: LogCaptureFixture):
+def test_gitlab_wrong_url(caplog: LogCaptureFixture) -> None:
     """ Wrong url """
     did.base.Config(
         CONFIG.replace("url = https://gitlab.com\n", "url = https://localhost\n")
@@ -169,7 +170,7 @@ def test_gitlab_wrong_url(caplog: LogCaptureFixture):
         assert "Unable to connect" in caplog.text
 
 
-def test_gitlab_config_invaliad_ssl_verify(caplog: LogCaptureFixture):
+def test_gitlab_config_invaliad_ssl_verify(caplog: LogCaptureFixture) -> None:
     """  Test ssl_verify with wrong bool value """
     did.base.Config(f"""
 {CONFIG}
@@ -182,7 +183,7 @@ ssl_verify = ss
 
 @pytest.mark.skipif("GITLAB_TOKEN" not in os.environ,
                     reason="No GITLAB_TOKEN environment variable found")
-def test_gitlab_config_disabled_ssl_verify():
+def test_gitlab_config_disabled_ssl_verify() -> None:
     """  Test ssl_verify disabled """
     did.base.Config(f"""
 {CONFIG}

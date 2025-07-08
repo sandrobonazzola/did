@@ -258,10 +258,13 @@ class Issue():
                     continue
                 except (requests.exceptions.ConnectionError,
                         urllib3.exceptions.NewConnectionError,
-                        requests.exceptions.HTTPError
+                        requests.exceptions.HTTPError,
+                        ConnectionResetError
                         ) as error:
-                    if 'Connection aborted' in str(error):
-                        log.debug("Connection aborted. Sleeping for 10 seconds.")
+                    if isinstance(error, ConnectionResetError) or (
+                            'Connection aborted' in str(error)):
+                        log.debug(
+                            "Connection reset/aborted. Sleeping for 10 seconds.")
                         time.sleep(10)
                         continue
                     log.error("Error fetching '%s': %s", current_url, error)

@@ -70,8 +70,8 @@ class Zammad():
         log.data(pretty(result))
         return result
 
-    def get_articles(self, ticket_id: str) -> list[dict[str, Any]]:
-        result: list[dict[str, Any]] = self.perform_search(
+    def get_articles(self, ticket_id: str) -> Any:
+        result = self.perform_search(
             f"/ticket_articles/by_ticket/{ticket_id}")["assets"]
         log.debug("Result: %s fetched", listed(len(result), "item"))
         log.data(pretty(result))

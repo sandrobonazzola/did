@@ -22,7 +22,7 @@ type = trac
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #  Tests
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-def test_trac_missing_url(caplog: LogCaptureFixture):
+def test_trac_missing_url(caplog: LogCaptureFixture) -> None:
     """ Missing url """
     did.base.Config(CONFIG)
     with caplog.at_level(logging.ERROR):
@@ -30,7 +30,7 @@ def test_trac_missing_url(caplog: LogCaptureFixture):
         assert "Skipping section trac due to error: No trac url set" in caplog.text
 
 
-def test_trac_missing_prefix(caplog: LogCaptureFixture):
+def test_trac_missing_prefix(caplog: LogCaptureFixture) -> None:
     """ Missing prefix """
     did.base.Config(f"""
 {CONFIG}
@@ -41,7 +41,7 @@ url = https://localhost
         assert "Skipping section trac due to error: No prefix set" in caplog.text
 
 
-def test_wrong_url(caplog: LogCaptureFixture):
+def test_wrong_url(caplog: LogCaptureFixture) -> None:
     """ Connecting to wrong URL """
     did.base.Config(f"""
 {CONFIG}

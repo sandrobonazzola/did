@@ -34,7 +34,7 @@ login = mikelo2
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
-def test_koji_build():
+def test_koji_build() -> None:
     """ Created issues """
     did.base.Config(CONFIG)
     option = "--koji-builds "
@@ -52,7 +52,7 @@ def test_koji_build():
     assert not stats
 
 
-def test_koji_missing_url(caplog: LogCaptureFixture):
+def test_koji_missing_url(caplog: LogCaptureFixture) -> None:
     """ Missing url """
     did.base.Config("""
                     [general]

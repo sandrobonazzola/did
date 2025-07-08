@@ -41,6 +41,7 @@ Available options:
 .. _Preferences: https://bugzilla.redhat.com/userprefs.cgi?tab=apikey
 """
 
+import http.client
 import xmlrpc.client
 from argparse import Namespace
 from typing import Any, Generator, Optional, cast
@@ -86,7 +87,9 @@ class Bugzilla():
                     url=self.parent.url,  # pyright:ignore[reportArgumentType]
                     sslverify=self.parent.ssl_verify
                     )
-            except requests.exceptions.ConnectionError as conn_err:
+            except (requests.exceptions.ConnectionError,
+                    http.client.RemoteDisconnected,
+                    ConnectionResetError) as conn_err:
                 raise ReportError(
                     "Connection to bugzilla server failed "
                     f"for [{self.parent.option}] section: {conn_err}"
@@ -107,13 +110,17 @@ class Bugzilla():
         try:
             for attempt in Retrying(
                     stop=stop_after_attempt(3),
-                    retry=retry_if_exception_type(
-                        requests.exceptions.ConnectionError),
+                    retry=retry_if_exception_type((
+                        requests.exceptions.ConnectionError,
+                        http.client.RemoteDisconnected,
+                        ConnectionResetError)),
                     before_sleep=bugzilla_before_sleep,
                     reraise=True):
                 with attempt:
                     result = self.server.query(query)
-        except (requests.exceptions.RequestException, RetryError) as error:
+        except (requests.exceptions.RequestException,
+                http.client.RemoteDisconnected,
+                ConnectionResetError, RetryError) as error:
             log.debug(error)
             raise ReportError(
                 f"Bugzilla search for [{self.parent.option}] section failed."
@@ -140,30 +147,52 @@ class Bugzilla():
         # See within https://github.com/python-bugzilla:
         # python-bugzilla/blob/35c4510314ee62cc4b7dfd50acfbaca0c8baa366/bugzilla/base.py#L535
 
-        for attempt in Retrying(
-                stop=stop_after_attempt(3),
-                retry=retry_if_exception_type(requests.exceptions.ConnectionError),
-                before_sleep=bugzilla_before_sleep,
-                reraise=True
-                ):
-            with attempt:
-                result_history: dict[str, Any] = cast(
-                    dict[str, Any],
-                    self.server._proxy.Bug.history({'ids': list(bugs.keys())}))
+        try:
+            for attempt in Retrying(
+                    stop=stop_after_attempt(3),
+                    retry=retry_if_exception_type((
+                        requests.exceptions.ConnectionError,
+                        http.client.RemoteDisconnected,
+                        ConnectionResetError)),
+                    before_sleep=bugzilla_before_sleep,
+                    reraise=True
+                    ):
+                with attempt:
+                    result_history: dict[str, Any] = cast(
+                        dict[str, Any],
+                        self.server._proxy.Bug.history({'ids': list(bugs.keys())}))
+        except (requests.exceptions.RequestException,
+                http.client.RemoteDisconnected,
+                ConnectionResetError, RetryError) as error:
+            log.debug(error)
+            raise ReportError(
+                f"Bugzilla bug history for [{self.parent.option}] section failed."
+                ) from error
         log.debug(pretty(result))
         history = dict((bug["id"], bug["history"]) for bug in result_history["bugs"])
         # Fetch bug comments
         log.debug("Fetching bug comments")
-        for attempt in Retrying(
-                stop=stop_after_attempt(3),
-                retry=retry_if_exception_type(requests.exceptions.ConnectionError),
-                before_sleep=bugzilla_before_sleep,
-                reraise=True
-                ):
-            with attempt:
-                result_comments: dict[str, Any] = cast(
-                    dict[str, Any],
-                    self.server._proxy.Bug.comments({'ids': list(bugs.keys())}))
+        try:
+            for attempt in Retrying(
+                    stop=stop_after_attempt(3),
+                    retry=retry_if_exception_type((
+                        requests.exceptions.ConnectionError,
+                        http.client.RemoteDisconnected,
+                        ConnectionResetError)),
+                    before_sleep=bugzilla_before_sleep,
+                    reraise=True
+                    ):
+                with attempt:
+                    result_comments: dict[str, Any] = cast(
+                        dict[str, Any],
+                        self.server._proxy.Bug.comments({'ids': list(bugs.keys())}))
+        except (requests.exceptions.RequestException,
+                http.client.RemoteDisconnected,
+                ConnectionResetError, RetryError) as error:
+            log.debug(error)
+            raise ReportError(
+                f"Bugzilla bug comments for [{self.parent.option}] section failed."
+                ) from error
         # pylint: enable=protected-access
         log.debug(pretty(result_comments))
         comments = dict(

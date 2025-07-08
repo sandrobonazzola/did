@@ -21,6 +21,7 @@ import gzip
 import mailbox
 import tempfile
 import urllib.parse
+from argparse import Namespace
 from base64 import b32encode
 from hashlib import sha1
 from typing import Iterable, Optional
@@ -32,7 +33,7 @@ from did.stats import Stats, StatsGroup
 from did.utils import item, log
 
 # Default number of seconds waiting on inbox before giving up
-TIMEOUT = 60
+TIMEOUT = 60.0
 
 
 class Message():
@@ -96,10 +97,15 @@ def _unique_messages(mbox: mailbox.mbox) -> Iterable[Message]:
 
 
 class Hyperkitty():
-    def __init__(self, parent, user: User, url: str, timeout: int = TIMEOUT) -> None:
+    def __init__(self,
+                 parent: StatsGroup,
+                 user: User,
+                 url: str,
+                 timeout: float = TIMEOUT,
+                 ) -> None:
         self.parent = parent
-        self.threads_cache: dict = {}
-        self.messages_cache: dict = {}
+        self.threads_cache: dict[tuple[Date, Date], list[Message]] = {}
+        self.messages_cache: dict[str, Message] = {}
         self.url = url
         self.user = user
         self.timeout = timeout
@@ -110,7 +116,7 @@ class Hyperkitty():
     def _get_message_url(self, msg: Message) -> str:
         return self.__get_url(f"message/{msg.id_hash()}/")
 
-    def print_msg(self, options, msg: Message) -> None:
+    def print_msg(self, options: Namespace, msg: Message) -> None:
         if options.format == 'markdown':
             item(f"[{msg.subject()}]({self._get_message_url(msg)})",
                  level=1,
@@ -147,6 +153,10 @@ class Hyperkitty():
 
         for msg in _unique_messages(mbox):
             msg_id = msg.id()
+            if msg_id is None:
+                log.warning("Found message without id, skipping.")
+                log.debug("skipped message: %s", str(msg))
+                continue
 
             log.debug("Found message %s.", msg_id)
             msgs.append(msg)
@@ -228,7 +238,12 @@ class Hyperkitty():
             mbox_url,
             timeout=self.timeout
             )
-        resp.raise_for_status()
+        try:
+            resp.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            log.error("Error fetching all threads: %s", e)
+            return []
+        log.debug("Got: %s", resp.headers)
 
         if not resp.ok:
             log.error("Response is not ok: %s", str(resp))
@@ -237,7 +252,7 @@ class Hyperkitty():
         mbox = self.__get_mbox_from_content(resp.content)
         return self.__get_msgs_from_mbox(mbox)
 
-    def get_all_threads(self, since: Date, until: Date):
+    def get_all_threads(self, since: Date, until: Date) -> Iterable[Message]:
         log.debug("Fetching all threads since %s until %s.", since, until)
         if (since, until) not in self.threads_cache:
             self.threads_cache[(since, until)] = self.__fetch_all_threads(since, until)
@@ -267,10 +282,25 @@ class Hyperkitty():
                 yield msg
 
 
-class ThreadsStarted(Stats):
+class HyperkittyStats(Stats):
+    def __init__(self,
+                 option: str,
+                 name: Optional[str] = None,
+                 parent: Optional["HyperkittyStatsGroup"] = None,
+                 user: Optional[User] = None) -> None:
+        self.parent: HyperkittyStatsGroup
+        self.options: Namespace
+        self.user: User
+        Stats.__init__(self, option, name, parent, user)
+
+    def fetch(self) -> None:
+        raise NotImplementedError("Not implemented")
+
+
+class ThreadsStarted(HyperkittyStats):
     """ Mail threads started """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info(
             "Searching for new threads on %s started by %s",
             self.parent.url,
@@ -285,7 +315,7 @@ class ThreadsStarted(Stats):
             and msg.is_thread_root()
             ]
 
-    def show(self):
+    def show(self) -> None:
         if not self.error and not self.stats:
             return
 
@@ -294,10 +324,10 @@ class ThreadsStarted(Stats):
             self.parent.hyperkitty.print_msg(self.options, msg)
 
 
-class ThreadsInvolved(Stats):
+class ThreadsInvolved(HyperkittyStats):
     """ Mail threads involved in """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info(
             "Searching for mail threads on %s where %s was involved",
             self.parent.url,
@@ -312,7 +342,7 @@ class ThreadsInvolved(Stats):
             and not msg.is_thread_root()
             ]
 
-    def show(self):
+    def show(self) -> None:
         if not self.error and not self.stats:
             return
 
@@ -321,12 +351,17 @@ class ThreadsInvolved(Stats):
             self.parent.hyperkitty.print_msg(self.options, msg)
 
 
-class HyperkittyStats(StatsGroup):
+class HyperkittyStatsGroup(StatsGroup):
     """ Hyperkitty Mailing List Archive """
 
     order = 760
 
-    def __init__(self, option, name=None, parent=None, user=None):
+    def __init__(self,
+                 option: str,
+                 name: Optional[str] = None,
+                 parent: Optional[StatsGroup] = None,
+                 user: Optional[User] = None,
+                 ) -> None:
         StatsGroup.__init__(self, option, name, parent, user)
 
         config = dict(Config().section(option))
@@ -334,9 +369,10 @@ class HyperkittyStats(StatsGroup):
             self.url = config["url"]
         except KeyError as key_err:
             raise ReportError(f"No url in the [{option}] section.") from key_err
-
-        self.hyperkitty = Hyperkitty(self.parent, self.user, self.url,
-                                     timeout=config.get("timeout"))
+        self.hyperkitty: Hyperkitty
+        if self.user is not None and self.parent is not None:
+            self.hyperkitty = Hyperkitty(self.parent, self.user, self.url,
+                                         timeout=float(config.get("timeout", TIMEOUT)))
         self.stats = [
             ThreadsStarted(option=f"{option}-started", parent=self),
             ThreadsInvolved(option=f"{option}-involved", parent=self),

@@ -42,7 +42,7 @@ PR_CLOSED = 4
 #  Tests
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-def test_pagure_issues_created():
+def test_pagure_issues_created() -> None:
     """ Created issues """
     did.base.Config(CONFIG)
     option = "--pagure-issues-created "
@@ -54,7 +54,7 @@ def test_pagure_issues_created():
     assert not stats
 
 
-def test_pagure_issues_closed():
+def test_pagure_issues_closed() -> None:
     """ Closed issues """
     did.base.Config(CONFIG)
     option = "--pagure-issues-closed "
@@ -66,7 +66,7 @@ def test_pagure_issues_closed():
     assert not stats
 
 
-def test_pagure_pull_requests_created():
+def test_pagure_pull_requests_created() -> None:
     """ Created pull requests """
     did.base.Config(CONFIG)
     option = "--pagure-pull-requests-created "
@@ -78,7 +78,7 @@ def test_pagure_pull_requests_created():
     assert not stats
 
 
-def test_pagure_pull_requests_closed():
+def test_pagure_pull_requests_closed() -> None:
     """ Closed pull requests """
     did.base.Config(CONFIG)
     option = "--pagure-pull-requests-closed "
@@ -91,7 +91,7 @@ def test_pagure_pull_requests_closed():
                in str(stat) for stat in stats)
 
 
-def test_pagure_comments():
+def test_pagure_comments() -> None:
     """ Comments """
     did.base.Config(CONFIG)
     option = "--pagure-commented "
@@ -103,7 +103,7 @@ def test_pagure_comments():
     assert any("2018-11-27 - psss commented on issue" in str(stat) for stat in stats)
 
 
-def test_pagure_missing_url(caplog: LogCaptureFixture):
+def test_pagure_missing_url(caplog: LogCaptureFixture) -> None:
     """ Missing url """
     did.base.Config("""
                 [general]

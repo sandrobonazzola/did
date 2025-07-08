@@ -155,6 +155,9 @@ def test_item_wiki(capsys: pytest.CaptureFixture[str]) -> None:
 
 
 def test_pluralize() -> None:
+    """
+    Test pluralization
+    """
     pluralize = did.utils.pluralize
     assert pluralize("word") == "words"
     assert pluralize("bounty") == "bounties"

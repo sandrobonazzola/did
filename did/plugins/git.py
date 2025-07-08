@@ -21,6 +21,8 @@ once. Non git directories from the expansion are silently ignored.
 import os
 import re
 import subprocess
+from argparse import Namespace
+from typing import Optional
 
 import did.base
 from did.stats import Stats, StatsGroup
@@ -35,12 +37,12 @@ class GitRepo():
     """ Git repository investigator """
     # pylint: disable=too-few-public-methods
 
-    def __init__(self, path):
+    def __init__(self, path: str) -> None:
         """ Initialize the path. """
         self.path = path
 
     # pylint: disable=too-many-branches
-    def commits(self, user, options):
+    def commits(self, user: did.base.User, options: Namespace) -> list[str]:
         """ List commits for given user. """
         # Prepare the command
         command = f"git log --all --author={user.login}".split()
@@ -133,18 +135,23 @@ class GitRepo():
 class GitCommits(Stats):
     """ Git commits """
 
-    def __init__(self, option, name=None, parent=None, path=None):
-        super().__init__(option=option, name=name, parent=parent)
+    def __init__(self,
+                 option: str,
+                 name: str,
+                 parent: "GitStats",
+                 path: str) -> None:
+        self.user: did.base.User
+        self.options: Namespace
         self.path = path
         self.repo = GitRepo(self.path)
+        super().__init__(option=option, name=name, parent=parent)
 
-    def fetch(self):
+    def fetch(self) -> None:
         self.stats = self.repo.commits(self.user, self.options)
 
-    def header(self):
+    def header(self) -> None:
         """ Show summary header. """
         # A bit different header for git stats: Work on xxx: x commit(s)
-        # FIXME: better handling for `commit` plural
         item(
             f'{self.name}: {len(self.stats)} '
             f'commit{"" if len(self.stats) == 1 else "s"}',
@@ -161,7 +168,11 @@ class GitStats(StatsGroup):
     # Default order
     order = 300
 
-    def __init__(self, option, name=None, parent=None, user=None):
+    def __init__(self,
+                 option: str,
+                 name: Optional[str] = None,
+                 parent: Optional[StatsGroup] = None,
+                 user: Optional[did.base.User] = None) -> None:
         name = f"Work on {option}"
         StatsGroup.__init__(self, option, name, parent, user)
         for repo, path in did.base.Config().section(option):

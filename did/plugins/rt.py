@@ -11,11 +11,14 @@ Config example::
 
 import http.client
 import urllib.parse
+from argparse import Namespace
 from base64 import b64encode
+from http import HTTPStatus
+from typing import Optional
 
 import gssapi
 
-from did.base import Config, ReportError
+from did.base import Config, ReportError, User
 from did.stats import Stats, StatsGroup
 from did.utils import log, pretty
 
@@ -27,13 +30,13 @@ from did.utils import log, pretty
 class RequestTracker():
     """ Request Tracker Investigator """
 
-    def __init__(self, parent):
+    def __init__(self, parent: "RequestTrackerStatsGroup") -> None:
         """ Initialize url and parent """
         self.parent = parent
         self.url = urllib.parse.urlsplit(parent.url)
         self.url_string = parent.url
 
-    def get(self, path):
+    def get(self, path: str) -> list[str]:
         """ Perform a GET request with GSSAPI authentication """
         # Generate token
         service_name = gssapi.Name(
@@ -51,7 +54,7 @@ class RequestTracker():
 
         # Perform the request, convert response into lines
         response = connection.getresponse()
-        if response.status != 200:
+        if response.status != HTTPStatus.OK:
             raise ReportError(
                 f"Failed to fetch tickets: {response.status}")
         lines = response.read().decode("utf8").strip().split("\n")[1:]
@@ -59,7 +62,7 @@ class RequestTracker():
         log.debug(pretty(lines))
         return lines
 
-    def search(self, query):
+    def search(self, query: str) -> list["Ticket"]:
         """ Perform request tracker search """
         # Prepare the path
         log.debug("Query: %s", query)
@@ -80,12 +83,12 @@ class Ticket():
     """ Request tracker ticket """
     # pylint: disable=too-few-public-methods
 
-    def __init__(self, record, parent):
+    def __init__(self, record: str, parent: "RequestTrackerStatsGroup") -> None:
         """ Initialize the ticket from the record """
         self.id, self.subject = record.split("\t")
         self.parent = parent
 
-    def __str__(self):
+    def __str__(self) -> str:
         """ Consistent identifier and subject for displaying """
         return f"{self.parent.prefix}#{self.id} - {self.subject}"
 
@@ -94,10 +97,28 @@ class Ticket():
 #  Stats
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-class ReportedTickets(Stats):
+class RequestTrackerStats(Stats):
+    """ Request Tracker stats """
+
+    def __init__(self,
+                 option: str,
+                 name: Optional[str] = None,
+                 parent: Optional["RequestTrackerStatsGroup"] = None,
+                 user: Optional[User] = None) -> None:
+        self.parent: "RequestTrackerStatsGroup"
+        self.user: User
+        self.options: Namespace
+        super().__init__(option, name, parent, user)
+
+    def fetch(self) -> None:
+        """ Fetch the stats """
+        raise NotImplementedError("Subclass must implement fetch()")
+
+
+class ReportedTickets(RequestTrackerStats):
     """ Tickets reported """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info("Searching for tickets reported by %s", self.user)
         query = (
             f"Requestor.EmailAddress = '{self.user.email}' "
@@ -107,10 +128,10 @@ class ReportedTickets(Stats):
         self.stats = self.parent.request_tracker.search(query)
 
 
-class ResolvedTickets(Stats):
+class ResolvedTickets(RequestTrackerStats):
     """ Tickets resolved """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info("Searching for tickets resolved by %s", self.user)
         query = (
             f"Owner.EmailAddress = '{self.user.email}' "
@@ -124,13 +145,17 @@ class ResolvedTickets(Stats):
 #  Stats Group
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-class RequestTrackerStats(StatsGroup):
+class RequestTrackerStatsGroup(StatsGroup):
     """ Request Tracker """
 
     # Default order
     order = 500
 
-    def __init__(self, option, name=None, parent=None, user=None):
+    def __init__(self,
+                 option: str,
+                 name: Optional[str] = None,
+                 parent: Optional[StatsGroup] = None,
+                 user: Optional[User] = None) -> None:
         """ Process config, prepare investigator, construct stats """
 
         # Check Request Tracker instance url and custom prefix
