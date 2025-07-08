@@ -22,16 +22,17 @@ It's also possible to set a timeout, if not specified it defaults to
 """
 
 import datetime
+from argparse import Namespace
 from typing import Any, Optional
 
 import requests
 
-from did.base import Config, ReportError, get_token
+from did.base import Config, ReportError, User, get_token
 from did.stats import Stats, StatsGroup
 from did.utils import listed, log, pretty
 
 # Default number of seconds waiting on Pagure before giving up
-TIMEOUT = 60
+TIMEOUT = 60.0
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #  Investigator
@@ -42,7 +43,7 @@ class Pagure():
     """ Pagure Investigator """
     # pylint: disable=too-few-public-methods
 
-    def __init__(self, url: str, token: Optional[str], timeout: int = TIMEOUT):
+    def __init__(self, url: str, token: Optional[str], timeout: float = TIMEOUT):
         """ Initialize url and headers """
         self.url = url.rstrip("/")
         self.token = token
@@ -55,7 +56,7 @@ class Pagure():
     def get_activities(self,
                        username: str,
                        date: str,
-                       grouped: bool = False) -> list:
+                       grouped: bool = False) -> list[dict[str, Any]]:
         """
         Get activities for days in requested range
 
@@ -109,9 +110,12 @@ class Pagure():
         except requests.exceptions.JSONDecodeError as error:
             log.debug(error)
             raise ReportError(f"Pagure JSON failed: {response.text}.") from error
-        return data.get("activities", [])
+        return list(data.get("activities", []))
 
-    def search(self, query: str, pagination: str, result_field: str):
+    def search(self,
+               query: str,
+               pagination: str,
+               result_field: str) -> list[dict[str, Any]]:
         """ Perform Pagure query """
         result = []
         url = "/".join((self.url, query))
@@ -152,7 +156,7 @@ class Issue():
     """ Pagure Issue or Pull Request """
     # pylint: disable=too-few-public-methods
 
-    def __init__(self, data: dict[str, Any], options):
+    def __init__(self, data: dict[str, Any], options: Namespace) -> None:
         self.options = options
         self.data: dict[str, Any] = data
         self.title: str = data['title']
@@ -172,7 +176,7 @@ class Issue():
 
         log.details(f'[{self.created}] {self}')
 
-    def __str__(self):
+    def __str__(self) -> str:
         """ String representation """
         label = f"{self.project}#{self.identifier}"
         if self.options.format == "markdown":
@@ -185,7 +189,7 @@ class Comment():
     """ Pagure comment activity """
     # pylint: disable=too-few-public-methods
 
-    def __init__(self, data, options, url):
+    def __init__(self, data: dict[str, Any], options: Namespace, url: str) -> None:
         self.options = options
         self.date = data["date"]
         self.text = data["description_mk"].replace(
@@ -196,7 +200,7 @@ class Comment():
             '</p></div>',
             '')
 
-    def __str__(self):
+    def __str__(self) -> str:
         """ String representation """
         return f'{self.date} - {self.text}'
 
@@ -205,10 +209,26 @@ class Comment():
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
-class IssuesCreated(Stats):
+class PagureStats(Stats):
+
+    def __init__(self,
+                 option: str,
+                 name: Optional[str] = None,
+                 parent: Optional["PagureStatsGroup"] = None,
+                 user: Optional[User] = None) -> None:
+        self.parent: PagureStatsGroup
+        self.user: User
+        self.options: Namespace
+        Stats.__init__(self, option, name, parent, user)
+
+    def fetch(self) -> None:
+        raise NotImplementedError("fetch not implemented")
+
+
+class IssuesCreated(PagureStats):
     """ Issues created """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info('Searching for issues created by %s', self.user)
         issues = [Issue(issue, self.options) for issue in self.parent.pagure.search(
             query=(
@@ -219,10 +239,10 @@ class IssuesCreated(Stats):
         self.stats = sorted(issues, key=str)
 
 
-class IssuesClosed(Stats):
+class IssuesClosed(PagureStats):
     """ Issues closed """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info('Searching for issues closed by %s', self.user)
         issues = [Issue(issue, self.options) for issue in self.parent.pagure.search(
             query=(
@@ -238,10 +258,10 @@ class IssuesClosed(Stats):
             key=str)
 
 
-class PullRequestsCreated(Stats):
+class PullRequestsCreated(PagureStats):
     """ Pull requests created """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info('Searching for pull requests created by %s', self.user)
         issues = [Issue(issue, self.options) for issue in self.parent.pagure.search(
             query=(
@@ -252,10 +272,10 @@ class PullRequestsCreated(Stats):
         self.stats = sorted(issues, key=str)
 
 
-class Commented(Stats):
+class Commented(PagureStats):
     """ Commented """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info('Searching for comments by %s', self.user)
         log.debug('Search activity stats for %s', self.user)
         requested_range = [
@@ -277,14 +297,14 @@ class Commented(Stats):
             ], key=str)
 
 
-class PullRequestsClosed(Stats):
+class PullRequestsClosed(PagureStats):
     """
     Pull requests closed.
     Results may be incomplete due to unfixed issue
     https://pagure.io/pagure/issue/4329.
     """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info('Searching for pull requests closed by %s', self.user)
         issues = [Issue(issue, self.options) for issue in self.parent.pagure.search(
             query=(f'user/{self.user.login}/requests/actionable?'
@@ -302,13 +322,17 @@ class PullRequestsClosed(Stats):
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
-class PagureStats(StatsGroup):
+class PagureStatsGroup(StatsGroup):
     """ Pagure work """
 
     # Default order
     order = 390
 
-    def __init__(self, option, name=None, parent=None, user=None):
+    def __init__(self,
+                 option: str,
+                 name: Optional[str] = None,
+                 parent: Optional[StatsGroup] = None,
+                 user: Optional[User] = None) -> None:
         StatsGroup.__init__(self, option, name, parent, user)
         config = dict(Config().section(option))
         # Check server url
@@ -322,9 +346,7 @@ class PagureStats(StatsGroup):
         self.pagure = Pagure(
             self.url,
             self.token,
-            timeout=config.get(
-                "timeout",
-                TIMEOUT))
+            timeout=float(config.get("timeout", TIMEOUT)))
         # Create the list of stats
         self.stats = [
             IssuesCreated(

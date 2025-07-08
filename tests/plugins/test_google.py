@@ -101,6 +101,7 @@ def test_empty_google_stats_base() -> None:
 
 
 def test_google_calendar() -> None:
+    did.base.Config(CONFIG)
     stats = google.GoogleStatsGroup("google")
     http_credentials = ("client_id", "client_secret", ["calendar", "tasks"], "storage")
     gcal = google.GoogleCalendar((http_credentials), stats)
@@ -125,11 +126,25 @@ class Events:
         return EventList()
 
 
+class TaskList:
+    # pylint: disable=too-few-public-methods
+    def execute(self) -> dict[str, Any]:
+        return {
+            "items": []
+            }
+
+
+class Tasks:
+    # pylint: disable=too-few-public-methods
+    def list(self, **kwargs: Any) -> TaskList:  # pylint: disable=unused-argument
+        return TaskList()
+
+
 class MockedService:
 
     # pylint: disable=unused-argument
-    def tasks(self, **kwargs: Any) -> Events:
-        return Events()
+    def tasks(self, **kwargs: Any) -> Tasks:
+        return Tasks()
 
     # pylint: disable=unused-argument
     def events(self, **kwargs: Any) -> Events:
@@ -137,13 +152,15 @@ class MockedService:
 
 
 # pylint: disable=unused-argument
-@patch('oauth2client.client.OAuth2WebServerFlow')
-@patch("oauth2client.tools.run_flow")
+@patch('did.plugins.google.get_credentials')
 @patch('googleapiclient.discovery.build')
 def test_google_events_organized(
         mock_build: MagicMock,
-        mock_flow: MagicMock,  # noqa: PT019
-        mock_run_flow: MagicMock) -> None:  # noqa: PT019
+        mock_get_creds: MagicMock,
+        ) -> None:
+    mock_creds = Mock()
+    mock_creds.valid = True
+    mock_get_creds.return_value = mock_creds
     mock_build.return_value = MockedService()
     did.base.Config(CONFIG)
     stats = did.cli.main(INTERVAL)[0][0].stats[0].stats[0].stats
