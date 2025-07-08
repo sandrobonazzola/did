@@ -11,8 +11,10 @@ Config example::
 
 import re
 import xmlrpc.client
+from argparse import Namespace
+from typing import Any, Generator, Optional, cast
 
-from did.base import Config, ReportError
+from did.base import Config, ReportError, User
 from did.stats import Stats, StatsGroup
 from did.utils import log, pretty
 
@@ -28,18 +30,24 @@ class Trac():
     """ Trac investigator """
 
     def __init__(
-            self, ticket=None, changelog=None, parent=None, options=None):
+            self,
+            ticket: Any = None,
+            changelog: Any = None,
+            parent: Optional["TracStats"] = None,
+            options: Optional[Namespace] = None) -> None:
         """ Initialize ticket info and history """
         if ticket is None:
             return
         self.id, self.created, self.modified, self.attributes = ticket
-        self.parent = parent
-        self.options = options
+        if parent is not None:
+            self.parent: TracStats = parent
+        if options is not None:
+            self.options: Namespace = options
         self.changelog = changelog
         self.summary = self.attributes["summary"]
         self.resolution = self.attributes["resolution"]
 
-    def __str__(self):
+    def __str__(self) -> str:
         """ Consistent identifier and summary for displaying """
         # Show only interesting resolutions to be more concise
         if self.resolution and self.resolution in INTERESTING_RESOLUTIONS:
@@ -58,13 +66,15 @@ class Trac():
         return f"{identifier} - {self.summary}{resolution}"
 
     @staticmethod
-    def search(query, parent, options):
+    def search(query: str,
+               parent: "TracStats",
+               options: Namespace) -> list["Trac"]:
         """ Perform Trac search """
         # Extend the default max number of tickets to be fetched
         query = f"{query}&max={MAX_TICKETS}"
         log.debug("Search query: %s", query)
         try:
-            result = parent.proxy.ticket.query(query)
+            result: list[Any] = cast(list[Any], parent.proxy.ticket.query(query))
         except xmlrpc.client.Fault as error:
             log.error("An error encountered, while searching for tickets.")
             raise ReportError(error) from error
@@ -80,7 +90,7 @@ class Trac():
             multicall.ticket.get(ticket_id)
             multicall.ticket.changeLog(ticket_id)
         log.debug("Fetching trac tickets and their history")
-        result = list(multicall())
+        result = cast(list[Any], multicall())
         tickets = result[::2]
         changelogs = result[1::2]
         # Print debugging info
@@ -94,24 +104,28 @@ class Trac():
             Trac(ticket, changelg, parent=parent, options=options)
             for ticket, changelg in zip(tickets, changelogs)]
 
-    def history(self, user=None):
+    def history(self,
+                user: Optional[User] = None
+                ) -> Generator[tuple[str, str, str, str]]:
         """
         Return relevant who-did-what logs from the ticket history
         """
+        if self.changelog is None:
+            raise ValueError("No changelog found")
         for event in self.changelog:
             when, who, what, old, new, _ignore = event
             if self.options.since.date <= when <= self.options.until.date:
                 if user is None or who.startswith(user.login):
                     yield who, what, old, new
 
-    def accepted(self, user):
+    def accepted(self, user: User) -> bool:
         """ True if ticket was accepted in given time frame """
         for _who, what, _old, new in self.history(user):
             if what == "status" and new == "accepted":
                 return True
         return False
 
-    def updated(self, user):
+    def updated(self, user: User) -> bool:
         """
         True if the user commented the ticket in given time frame
         """
@@ -120,7 +134,7 @@ class Trac():
                 return True
         return False
 
-    def closed(self):
+    def closed(self) -> bool:
         """ True if ticket was closed in given time frame """
         for _who, what, _old, new in self.history():
             if what == "status" and new == "closed":
@@ -135,10 +149,16 @@ class Trac():
 class TracCommon(Stats):
     """ Common Trac Stats object for saving prefix & proxy """
 
-    def __init__(self, option, name=None, parent=None):
+    def __init__(self,
+                 option: str,
+                 name: Optional[str] = None,
+                 parent: Optional["TracStats"] = None) -> None:
+        self.parent: TracStats
+        self.user: User
+        self.options: Namespace
         Stats.__init__(self, option, name, parent)
 
-    def fetch(self):
+    def fetch(self) -> None:
         """ Fetch the stats (to be implemented by respective class). """
         raise NotImplementedError()
 
@@ -146,7 +166,7 @@ class TracCommon(Stats):
 class TracCreated(TracCommon):
     """ Created tickets """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info("Searching for tickets created by %s", self.user)
         query = (
             f"reporter=~{self.user.login}"
@@ -158,7 +178,7 @@ class TracCreated(TracCommon):
 class TracAccepted(TracCommon):
     """ Accepted tickets """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info("Searching for tickets accepted by %s", self.user)
         query = (
             f"time=..{self.options.until}"
@@ -173,7 +193,7 @@ class TracAccepted(TracCommon):
 class TracUpdated(TracCommon):
     """ Updated tickets """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info("Searching for tickets updated by %s", self.user)
         query = f"time=..{self.options.until}&modified={self.options.since}.."
         self.stats = [
@@ -184,7 +204,7 @@ class TracUpdated(TracCommon):
 class TracClosed(TracCommon):
     """ Closed tickets """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info("Searching for tickets closed by %s", self.user)
         query = (
             f"owner=~{self.user.login}"
@@ -206,7 +226,11 @@ class TracStats(StatsGroup):
     # Default order
     order = 400
 
-    def __init__(self, option, name=None, parent=None, user=None):
+    def __init__(self,
+                 option: str,
+                 name: Optional[str] = None,
+                 parent: Optional[StatsGroup] = None,
+                 user: Optional[User] = None) -> None:
         name = f"Tickets in {option}"
         StatsGroup.__init__(self, option, name, parent, user)
         # Initialize the server proxy
