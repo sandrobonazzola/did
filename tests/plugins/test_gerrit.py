@@ -25,14 +25,14 @@ prefix = GR
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
-def test_gerrit_smoke():
+def test_gerrit_smoke() -> None:
     """ Smoke test for all stats """
     did.base.Config(CONFIG)
     stats = did.cli.main("last week")
     assert stats
 
 
-def test_gerrit_merged():
+def test_gerrit_merged() -> None:
     """ Check merged changes """
     did.base.Config(CONFIG)
     stats = did.cli.main([
@@ -45,7 +45,7 @@ def test_gerrit_merged():
 
 
 @pytest.mark.skip("Gerrit returns an empty set")
-def test_gerrit_reviewed():
+def test_gerrit_reviewed() -> None:
     """ Check reviewed changes """
     did.base.Config(CONFIG)
     stats = did.cli.main([
@@ -58,7 +58,7 @@ def test_gerrit_reviewed():
 
 
 @pytest.mark.skip("Gerrit returns an empty set")
-def test_gerrit_submitted_for_review():
+def test_gerrit_submitted_for_review() -> None:
     """ Check changes submitted for review """
     did.base.Config(CONFIG)
     stats = did.cli.main([
@@ -71,7 +71,7 @@ def test_gerrit_submitted_for_review():
 
 
 @pytest.mark.skip("Gerrit returns an empty set")
-def test_gerrit_wip():
+def test_gerrit_wip() -> None:
     """ Check wip changes """
     did.base.Config(CONFIG)
     stats = did.cli.main([
@@ -83,7 +83,7 @@ def test_gerrit_wip():
         for change in stats)
 
 
-def test_gerrit_wip_disabled():
+def test_gerrit_wip_disabled() -> None:
     """ Check wip changes when the wip feature is disabled """
     did.base.Config(CONFIG + 'wip = False\n')
     stats = did.cli.main([

@@ -15,7 +15,7 @@ url = https://lore.kernel.org
 #  Week mails
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-def test_lore_week():
+def test_lore_week() -> None:
     """ Check all stats for given week """
     did.base.Config(CONFIG)
     stats = did.cli.main("--email mripard@kernel.org")
@@ -26,7 +26,7 @@ def test_lore_week():
 #  No mails posted
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-def test_lore_none():
+def test_lore_none() -> None:
     """ Check new mail threads started by the user """
     did.base.Config(CONFIG)
     stats = did.cli.main([
@@ -41,7 +41,7 @@ def test_lore_none():
 #  New mails started
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-def test_lore_started():
+def test_lore_started() -> None:
     """ Check new mail threads started by the user """
     did.base.Config(CONFIG)
     stats = did.cli.main([
@@ -60,7 +60,7 @@ def test_lore_started():
 #  Mails threads the user was involved in
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-def test_lore_involved():
+def test_lore_involved() -> None:
     """ Check new mail threads the user was involved in """
     did.base.Config(CONFIG)
     stats = did.cli.main([
@@ -79,7 +79,7 @@ def test_lore_involved():
 #  Mails threads the user replied to themselves
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-def test_lore_reply_to_themselves():
+def test_lore_reply_to_themselves() -> None:
     """ Check new mail threads started by and replied to the user"""
     did.base.Config(CONFIG)
     stats = did.cli.main([

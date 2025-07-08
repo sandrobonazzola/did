@@ -170,7 +170,7 @@ def get_credentials(client_id: str,
         # Try to refresh existing credentials first
         if credentials and credentials.refresh_token:
             try:
-                request = Request()  # type: ignore[no-untyped-call]
+                request = Request()
                 credentials.refresh(request)
                 save_credentials_to_file(credentials, credential_path)
             except Exception:  # pylint: disable=broad-except
@@ -271,9 +271,9 @@ class Event():
                 if "date" in self.start
                 else self.start["dateTime"][:10]
                 )
-            return f"{date} - *{self.summary}*"
+            return f"{date} - *{self.summary.strip()}*"
         # plain text
-        return self.summary
+        return self.summary.strip()
 
     def __getitem__(self, name: str) -> Any:
         return self.__dict__.get(name, None)

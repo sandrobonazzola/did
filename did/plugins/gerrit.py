@@ -15,9 +15,12 @@ Config example::
 import json
 import urllib.parse
 import urllib.request
-from datetime import datetime
+from argparse import Namespace
+from datetime import date, datetime
+from http import HTTPStatus
+from typing import Any, Optional
 
-from did.base import TODAY, Config, ReportError
+from did.base import TODAY, Config, ReportError, User
 from did.stats import Stats, StatsGroup
 from did.utils import log, pretty
 
@@ -29,7 +32,10 @@ from did.utils import log, pretty
 class Change():
     """ Request gerrit change """
 
-    def __init__(self, ticket, prefix, changelog=None):
+    def __init__(self,
+                 ticket: dict[str, Any],
+                 prefix: str,
+                 changelog: Optional[list[str]] = None) -> None:
         """ Initialize the change from the record.
         changelog['messages'] could be useful for collecting changes.
         """
@@ -41,14 +47,14 @@ class Change():
         self.changelog = changelog
         self.prefix = prefix
 
-    def __str__(self):
+    def __str__(self) -> str:
         """ Consistent identifier, project & subject for displaying """
         return f"{self.prefix}#{self.id} - {self.project} - {self.subject}"
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
         return str(self) == str(other)
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash(str(self))
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -61,20 +67,20 @@ class Gerrit():
      curl -s 'https://REPOURL/gerrit/changes/?q=is:abandoned+age:7d'
     """
 
-    def __init__(self, baseurl, prefix):
+    def __init__(self, baseurl: str, prefix: str) -> None:
         self.baseurl = baseurl
         self.prefix = prefix
 
     @staticmethod
-    def join_url_frags(base, query):
+    def join_url_frags(base: str, query: str) -> str:
         split = list(urllib.parse.urlsplit(base))
         split[2] = (split[2] + query).replace('//', '/')
         return urllib.parse.urlunsplit(split)
 
-    def get_query_result(self, url):
+    def get_query_result(self, url: str) -> Any:
         log.debug('url = %s', url)
         with urllib.request.urlopen(url) as res:
-            if res.getcode() != 200:
+            if res.getcode() != HTTPStatus.OK:
                 raise IOError(f'Cannot retrieve list of changes ({res.getcode()})')
 
             # see https://code.google.com/p/gerrit/issues/detail?id=2006
@@ -88,14 +94,14 @@ class Gerrit():
 
         return data
 
-    def get_changelog(self, chg):
+    def get_changelog(self, chg: Change) -> Any:
         messages_url = self.join_url_frags(
             self.baseurl, f'/changes/{chg.change_id}/detail')
         changelog = self.get_query_result(messages_url)
         log.debug("changelog = %s", changelog)
         return changelog
 
-    def search(self, query):
+    def search(self, query: str) -> list[dict[str, Any]]:
         full_url = self.join_url_frags(self.baseurl, '/changes/?q=' + query)
         log.debug('full_url = %s', full_url)
         tickets = []
@@ -121,21 +127,34 @@ class GerritUnit(Stats):
     """
 
     def __init__(
-            self, *, option, name=None, parent=None, base_url=None, prefix=None):
+            self, *,
+            option: str,
+            name: Optional[str] = None,
+            parent: "GerritStats",
+            base_url: Optional[str] = None,
+            prefix: Optional[str] = None) -> None:
+        self.user: User
+        self.options: Namespace
         self.base_url = base_url if base_url is not None else parent.repo_url
         self.prefix = prefix if prefix is not None else parent.config['prefix']
         self.repo = Gerrit(baseurl=self.base_url, prefix=self.prefix)
-        self.since_date = None
+        self.since_date: date
         self.server_features = [] if not parent else parent.server_features
 
         Stats.__init__(self, option, name, parent)
 
-    @staticmethod
-    def get_gerrit_date(instr):
-        return datetime.strptime(str(instr), '%Y-%m-%d').date()
+    def fetch(self) -> None:
+        raise NotImplementedError()
 
-    def fetch(self, query_string="", common_query_options=None,
-              limit_since=False):
+    @staticmethod
+    def get_gerrit_date(instr: str) -> date:
+        decoded_date = datetime.strptime(str(instr), '%Y-%m-%d')
+        return decoded_date.date()
+
+    def query(self,
+              query_string: str = "",
+              common_query_options: Optional[str] = None,
+              limit_since: bool = False) -> list[Change]:
         """
         Backend for the actual gerrit query.
 
@@ -210,10 +229,9 @@ class AbandonedChanges(GerritUnit):
     Changes abandoned
     """
 
-    def fetch(self, query_string="", common_query_options=None,
-              limit_since=False):
+    def fetch(self) -> None:
         log.info("Searching for changes abandoned by %s", self.user)
-        self.stats = GerritUnit.fetch(self, 'status:abandoned')
+        self.stats = self.query('status:abandoned')
         log.debug("self.stats = %s", self.stats)
 
 
@@ -223,10 +241,9 @@ class MergedChanges(GerritUnit):
     Changes successfully merged
     """
 
-    def fetch(self, query_string="", common_query_options=None,
-              limit_since=False):
+    def fetch(self) -> None:
         log.info("Searching for changes merged by %s", self.user)
-        self.stats = GerritUnit.fetch(self, 'status:merged')
+        self.stats = self.query('status:merged')
         log.debug("self.stats = %s", self.stats)
 
 
@@ -243,15 +260,13 @@ class SubmitedChanges(GerritUnit):
     Changes submitted for review
     """
 
-    def fetch(self, query_string="", common_query_options=None,
-              limit_since=False):
+    def fetch(self) -> None:
         log.info("Searching for changes opened by %s", self.user)
         if 'wip' in self.server_features:
             query_string = 'status:open+-is:wip'
         else:
             query_string = 'status:open'
-        self.stats = GerritUnit.fetch(self, query_string,
-                                      limit_since=True)
+        self.stats = self.query(query_string, limit_since=True)
         log.debug("self.stats = %s", self.stats)
 
 
@@ -260,14 +275,12 @@ class WIPChanges(GerritUnit):
     Work in progress changes
     """
 
-    def fetch(self, query_string="", common_query_options=None,
-              limit_since=False):
+    def fetch(self) -> None:
         log.info("Searching for WIP changes opened by %s", self.user)
         if 'wip' not in self.server_features:
             log.debug("WIP reviews are not supported by this server")
             return
-        self.stats = GerritUnit.fetch(self, 'status:open+is:wip',
-                                      limit_since=True)
+        self.stats = self.query('status:open+is:wip', limit_since=True)
         log.debug("self.stats = %s", self.stats)
 
 
@@ -278,13 +291,12 @@ class AddedPatches(GerritUnit):
     Additional patches added to existing changes
     """
 
-    def fetch(self, query_string="", common_query_options=None,
-              limit_since=False):
+    def fetch(self) -> None:
         log.info("Searching for patches added to changes by %s", self.user)
         reviewer = self.user.login
         self.stats = []
-        tickets = GerritUnit.fetch(
-            self, f'owner:{reviewer}+is:closed&q=owner:{reviewer}+is:open',
+        tickets = self.query(
+            f'owner:{reviewer}+is:closed&q=owner:{reviewer}+is:open',
             '')
         for tck in tickets:
             log.debug("ticket = %s", tck)
@@ -328,8 +340,7 @@ class ReviewedChanges(GerritUnit):
     Review of a change (for reviewers)
     """
 
-    def fetch(self, query_string="", common_query_options=None,
-              limit_since=False):
+    def fetch(self) -> None:
         log.info("Searching for changes reviewed by %s", self.user)
         # Collect ALL changes opened (and perhaps now closed) after
         # given date and collect all reviews from them ... then limit by
@@ -338,8 +349,8 @@ class ReviewedChanges(GerritUnit):
         # a right to do so).
         self.stats = []
         reviewer = self.user.login
-        tickets = GerritUnit.fetch(
-            self, f'reviewer:{self.user.login}+-owner:{self.user.login}',
+        tickets = self.query(
+            f'reviewer:{self.user.login}+-owner:{self.user.login}',
             '', limit_since=True)
         for tck in tickets:
             log.debug("ticket = %s", tck)
@@ -394,7 +405,10 @@ class GerritStats(StatsGroup):
     # Default order
     order = 350
 
-    def __init__(self, option, name=None, parent=None, user=None):
+    def __init__(self, option: str,
+                 name: Optional[str] = None,
+                 parent: Optional[StatsGroup] = None,
+                 user: Optional[User] = None) -> None:
         StatsGroup.__init__(self, option, name, parent, user)
         self.config = dict(Config().section(option))
         if 'url' not in self.config:

@@ -40,14 +40,14 @@ INTERVAL_EMPTY2 = "--since 2023-01-21 --until 2023-01-30"
 #  Smoke tests
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-def test_missing_token():
+def test_missing_token() -> None:
     """ Missing Sentry token results in Exception """
     did.base.Config(BASIC_CONFIG)
     with pytest.raises(did.base.ConfigError):
         did.cli.main(INTERVAL)
 
 
-def test_invalid_token(caplog: LogCaptureFixture):
+def test_invalid_token(caplog: LogCaptureFixture) -> None:
     """ Invalid Sentry token """
     did.base.Config(BAD_TOKEN_CONFIG)
     with caplog.at_level(logging.ERROR):
@@ -60,7 +60,7 @@ def test_invalid_token(caplog: LogCaptureFixture):
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 @pytest.mark.skip("did-tester organization doesn't exist?")
-def test_sentry_resolved():
+def test_sentry_resolved() -> None:
     """ Check expected resolved issues """
     did.base.Config(OK_CONFIG)
     stats = did.cli.main(f"""
@@ -70,7 +70,7 @@ def test_sentry_resolved():
 
 
 @pytest.mark.skip("did-tester organization doesn't exist?")
-def test_sentry_commented():
+def test_sentry_commented() -> None:
     """ Check expected commented issues """
     did.base.Config(OK_CONFIG)
     stats = did.cli.main(f"""
@@ -80,7 +80,7 @@ def test_sentry_commented():
 
 
 @pytest.mark.skip("did-tester organization doesn't exist?")
-def test_sentry_no_issues():
+def test_sentry_no_issues() -> None:
     """ Check for no issues """
     did.base.Config(OK_CONFIG)
     stats = did.cli.main(INTERVAL_EMPTY1)[0][0].stats[0].stats[0].stats

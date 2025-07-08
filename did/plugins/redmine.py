@@ -18,11 +18,14 @@ miss entries.
 """
 
 import datetime
+from argparse import Namespace
+from typing import Optional, cast
 
 import dateutil
+import dateutil.parser
 import feedparser  # type: ignore[import-untyped]
 
-from did.base import Config, ReportError
+from did.base import Config, ReportError, User
 from did.stats import Stats, StatsGroup
 from did.utils import log
 
@@ -35,11 +38,11 @@ class Activity():
     """ Redmine Activity """
     # pylint: disable=too-few-public-methods
 
-    def __init__(self, data):
-        self.data = data
-        self.title = data.title
+    def __init__(self, data: feedparser.FeedParserDict) -> None:
+        self.data: feedparser.FeedParserDict = data
+        self.title: str = str(data.title)
 
-    def __str__(self):
+    def __str__(self) -> str:
         """ String representation """
         return str(self.title)
 
@@ -48,10 +51,27 @@ class Activity():
 #  Stats
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-class RedmineActivity(Stats):
+class RedmineStats(Stats):
+    """ Redmine Stats """
+
+    def __init__(self,
+                 option: str,
+                 name: Optional[str] = None,
+                 parent: Optional["RedmineStatsGroup"] = None,
+                 user: Optional[User] = None) -> None:
+        self.parent: "RedmineStatsGroup"
+        self.user: User
+        self.options: Namespace
+        super().__init__(option=option, name=name, parent=parent, user=user)
+
+    def fetch(self) -> None:
+        raise NotImplementedError("Not implemented")
+
+
+class RedmineActivity(RedmineStats):
     """ Redmine Activity Stats """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info("Searching for activity by %s", self.user)
         results = []
 
@@ -63,9 +83,10 @@ class RedmineActivity(Stats):
                 f"&from={from_date.strftime('%Y-%m-%d')}"
                 )
             log.debug("Feed url: %s", feed_url)
-            feed = feedparser.parse(feed_url)
-            for entry in feed.entries:
-                updated = dateutil.parser.parse(entry.updated).date()
+            feed: feedparser.FeedParserDict = feedparser.parse(feed_url)
+            for entry in cast(list[feedparser.FeedParserDict], feed.entries):
+                updated: datetime.date = dateutil.parser.parse(
+                    str(entry.updated)).date()
                 if updated >= self.options.since.date:
                     results.append(entry)
             from_date = from_date - self.parent.activity_days
@@ -77,13 +98,17 @@ class RedmineActivity(Stats):
 #  Stats Group
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-class RedmineStats(StatsGroup):
+class RedmineStatsGroup(StatsGroup):
     """ Redmine Stats """
 
     # Default order
     order = 550
 
-    def __init__(self, option, name=None, parent=None, user=None):
+    def __init__(self,
+                 option: str,
+                 name: Optional[str] = None,
+                 parent: Optional[StatsGroup] = None,
+                 user: Optional[User] = None) -> None:
         name = f"Redmine activity on {option}"
         super().__init__(option=option, name=name, parent=parent, user=user)
         config = dict(Config().section(option))
@@ -93,7 +118,7 @@ class RedmineStats(StatsGroup):
         except KeyError as exc:
             raise ReportError(f"No Redmine url set in the [{option}] section") from exc
         try:
-            self.activity_days = datetime.timedelta(config["activity_days"])
+            self.activity_days = datetime.timedelta(float(config["activity_days"]))
         except KeyError:
             # 30 is value of activity_days_default
             self.activity_days = datetime.timedelta(30)
