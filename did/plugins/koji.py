@@ -12,6 +12,9 @@ Config example::
 
 """
 
+from argparse import Namespace
+from typing import Optional
+
 import koji  # type: ignore[import-untyped]
 import requests.exceptions
 
@@ -27,15 +30,17 @@ from did.utils import log
 class KojiBuilds(Stats):
     """ Finished koji builds """
 
-    def __init__(self, *, option, name=None,
-                 parent=None, options=None):
+    def __init__(self, *, option: str, name: Optional[str],
+                 parent: "KojiStats", options: Optional[Namespace] = None):
+        self.parent: "KojiStats"
+        self.options: Namespace
         Stats.__init__(self, option, name, parent, options=options)
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info("Searching for builds by %s", self.user)
         server = koji.ClientSession(self.parent.url, opts=self.parent.config)
         try:
-            self.user = server.getUser(self.parent.config['login'], strict=True)
+            koji_user = server.getUser(self.parent.config['login'], strict=True)
         except KeyError as keyerr:
             raise did.base.ReportError(
                 f"No koji user set in the [{self.option}] section") from keyerr
@@ -51,7 +56,7 @@ class KojiBuilds(Stats):
                 ) from req_error
 
         builds = server.listBuilds(
-            userID=self.user['id'],
+            userID=koji_user['id'],
             completeAfter=str(self.options.since),
             completeBefore=str(self.options.until))
         if self.options.format == "markdown":
@@ -84,7 +89,11 @@ class KojiStats(StatsGroup):
     # Default order
     order = 420
 
-    def __init__(self, option, name=None, parent=None, user=None):
+    def __init__(self,
+                 option: str,
+                 name: Optional[str] = None,
+                 parent: Optional[StatsGroup] = None,
+                 user: Optional[did.base.User] = None) -> None:
         StatsGroup.__init__(self, option, name, parent, user)
         self.config = dict(did.base.Config().section(option))
         try:

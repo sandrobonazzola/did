@@ -25,7 +25,7 @@ login = 4731
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
-def test_redmine_activity():
+def test_redmine_activity() -> None:
     """ Redmine activity """
     did.base.Config(CONFIG)
     option = "--redmine-activity "

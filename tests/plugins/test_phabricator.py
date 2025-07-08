@@ -3,12 +3,13 @@
 
 import os
 import re
-from typing import List
+from typing import Any, List, cast
 
 import pytest
 
 import did.base
 import did.cli
+import did.stats
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #  Constants
@@ -61,28 +62,28 @@ CONFIG_BAD_MISSING_TOKEN = f"""
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
-def test_missing_url():
+def test_missing_url() -> None:
     """ Missing phabricator URL results in Exception """
     did.base.Config(CONFIG_BAD_MISSING_URL)
     with pytest.raises(did.base.ConfigError):
         did.cli.main(INTERVAL)
 
 
-def test_empty_logins():
+def test_empty_logins() -> None:
     """ Empty phabricator logins results in Exception """
     did.base.Config(f"{CONFIG_BAD_MISSING_LOGINS}\nlogin=\n")
     with pytest.raises(did.base.ConfigError, match=r"Empty login found"):
         did.cli.main(INTERVAL)
 
 
-def test_missing_logins():
+def test_missing_logins() -> None:
     """ Missing phabricator logins results in Exception """
     did.base.Config(CONFIG_BAD_MISSING_LOGINS)
     with pytest.raises(did.base.ConfigError, match=r"No login set"):
         did.cli.main(INTERVAL)
 
 
-def test_missing_token():
+def test_missing_token() -> None:
     """ Missing phabricator token results in Exception """
     did.base.Config(CONFIG_BAD_MISSING_TOKEN)
     with pytest.raises(did.base.ConfigError):
@@ -93,16 +94,16 @@ def test_missing_token():
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
-def get_named_stat(options: str):
+def get_named_stat(options: str) -> List[Any]:
     """
     Retrieve the statistics by option name.
     """
     for stat in did.cli.main(f"{options} {INTERVAL}")[0][0].stats[0].stats:
         if stat.option in options:
             assert stat.stats is not None
-            return stat.stats
+            return cast(List[Any], stat.stats)
     pytest.fail(reason=f"No stat found with options {options}")
-    return None
+    return []
 
 
 def expect(key: str) -> List[str]:
@@ -146,7 +147,7 @@ def expect(key: str) -> List[str]:
     )
 @pytest.mark.skipif("PHABRICATOR_TOKEN" not in os.environ,
                     reason="No PHABRICATOR_TOKEN environment variable found")
-def test_differentials(options, expectations):
+def test_differentials(options: str, expectations: List[str]) -> None:
     did.base.Config(CONFIG_OK)
     stats = get_named_stat(options)
     assert len(expectations) == len(stats)

@@ -20,6 +20,7 @@ import gzip
 import mailbox
 import tempfile
 import urllib.parse
+from argparse import Namespace
 from importlib.metadata import version
 from typing import Iterable, Optional, Union
 
@@ -35,7 +36,7 @@ from did.utils import item, log
 USER_AGENT = f"did/{version('did')}"
 
 # Default number of seconds waiting on inbox before giving up
-TIMEOUT = 60
+TIMEOUT = 60.0
 
 
 class Message():
@@ -90,10 +91,14 @@ def _unique_messages(mbox: mailbox.mbox) -> Iterable[Message]:
 
 
 class PublicInbox():
-    def __init__(self, parent, user: User, url: str, timeout: int = TIMEOUT) -> None:
+    def __init__(self,
+                 parent: StatsGroup,
+                 user: User,
+                 url: str,
+                 timeout: float = TIMEOUT) -> None:
         self.parent = parent
-        self.threads_cache: dict = {}
-        self.messages_cache: dict = {}
+        self.threads_cache: dict[tuple[Date, Date], list[Message]] = {}
+        self.messages_cache: dict[str, Message] = {}
         self.url = url
         self.user = user
         self.timeout = timeout
@@ -105,7 +110,7 @@ class PublicInbox():
     def _get_message_url(self, msg: Message) -> str:
         return self.__get_url(f"/r/{msg.id()}/")
 
-    def print_msg(self, options, msg: Message) -> None:
+    def print_msg(self, options: Namespace, msg: Message) -> None:
         if options.format == 'markdown':
             item(f"[{msg.subject()}]({self._get_message_url(msg)})",
                  level=1,
@@ -134,6 +139,10 @@ class PublicInbox():
 
         for msg in _unique_messages(mbox):
             msg_id = msg.id()
+            if msg_id is None:
+                log.warning("Found message without id, skipping.")
+                log.debug("skipped message: %s", str(msg))
+                continue
 
             log.debug("Found message %s.", msg_id)
             msgs.append(msg)
@@ -221,15 +230,21 @@ class PublicInbox():
                 },
             timeout=self.timeout
             )
+        try:
+            resp.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            log.error("Error fetching all threads: %s", e)
+            return []
         log.debug("Got: %s", resp.headers)
 
         if not resp.ok:
+            log.error("Response is not ok: %s", str(resp))
             return []
 
         mbox = self.__get_mbox_from_content(resp.content)
         return self.__get_msgs_from_mbox(mbox)
 
-    def get_all_threads(self, since: Date, until: Date):
+    def get_all_threads(self, since: Date, until: Date) -> Iterable[Message]:
         if (since, until) not in self.threads_cache:
             self.threads_cache[(since, until)] = self.__fetch_all_threads(since, until)
 
@@ -255,10 +270,26 @@ class PublicInbox():
                 yield msg
 
 
-class ThreadsStarted(Stats):
+class PublicInboxStats(Stats):
+
+    def __init__(self,
+                 option: str,
+                 name: Optional[str] = None,
+                 parent: Optional["PublicInboxStatsGroup"] = None,
+                 user: Optional[User] = None) -> None:
+        self.parent: "PublicInboxStatsGroup"
+        self.options: Namespace
+        self.user: User
+        Stats.__init__(self, option, name, parent, user)
+
+    def fetch(self) -> None:
+        raise NotImplementedError("Not implemented")
+
+
+class ThreadsStarted(PublicInboxStats):
     """ Mail threads started """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info(
             "Searching for new threads on %s started by %s",
             self.parent.url,
@@ -272,7 +303,7 @@ class ThreadsStarted(Stats):
             and msg.is_between_dates(self.options.since, self.options.until)
             ]
 
-    def show(self):
+    def show(self) -> None:
         if not self.error and not self.stats:
             return
 
@@ -281,10 +312,10 @@ class ThreadsStarted(Stats):
             self.parent.public_inbox.print_msg(self.options, msg)
 
 
-class ThreadsInvolved(Stats):
+class ThreadsInvolved(PublicInboxStats):
     """ Mail threads involved in """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info(
             "Searching for mail threads on %s where %s was involved",
             self.parent.url,
@@ -298,7 +329,7 @@ class ThreadsInvolved(Stats):
             or not msg.is_between_dates(self.options.since, self.options.until)
             ]
 
-    def show(self):
+    def show(self) -> None:
         if not self.error and not self.stats:
             return
 
@@ -307,12 +338,20 @@ class ThreadsInvolved(Stats):
             self.parent.public_inbox.print_msg(self.options, msg)
 
 
-class PublicInboxStats(StatsGroup):
+class PublicInboxStatsGroup(StatsGroup):
     """ Public-Inbox Mailing List Archive """
 
     order = 750
 
-    def __init__(self, option, name=None, parent=None, user=None):
+    def __init__(self,
+                 option: str,
+                 name: Optional[str] = None,
+                 parent: Optional[StatsGroup] = None,
+                 user: Optional[User] = None) -> None:
+        if parent is None:
+            raise RuntimeError("PublicInboxStatsGroup must be a child of a StatsGroup")
+        self.parent: StatsGroup
+
         StatsGroup.__init__(self, option, name, parent, user)
 
         config = dict(Config().section(option))
@@ -321,8 +360,13 @@ class PublicInboxStats(StatsGroup):
         except KeyError as key_err:
             raise ReportError(f"No url in the [{option}] section.") from key_err
 
-        self.public_inbox = PublicInbox(self.parent, self.user, self.url,
-                                        timeout=config.get("timeout"))
+        self.public_inbox: PublicInbox
+        if self.user is not None:
+            self.public_inbox = PublicInbox(
+                self.parent,
+                self.user,
+                self.url,
+                float(config.get("timeout", TIMEOUT)))
         self.stats = [
             ThreadsStarted(option=f"{option}-started", parent=self),
             ThreadsInvolved(option=f"{option}-involved", parent=self),

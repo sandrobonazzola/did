@@ -31,15 +31,17 @@ __ https://docs.gitlab.com/ce/api/
 
 from __future__ import annotations
 
+from argparse import Namespace
 from time import sleep
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import dateutil
+import dateutil.parser
 import requests
 import urllib3
 from urllib3.exceptions import InsecureRequestWarning
 
-from did.base import Config, ReportError, get_token
+from did.base import Config, Date, ReportError, User, get_token
 from did.stats import Stats, StatsGroup
 from did.utils import listed, log, pretty, strtobool
 
@@ -82,7 +84,7 @@ class GitLab():
         self.project_issues: dict[str, list[dict[str, Any]]] = {}
         self.timeout = timeout
 
-    def _get_gitlab_api_raw(self, url):
+    def _get_gitlab_api_raw(self, url: str) -> requests.Response:
         log.debug("Connecting to GitLab API at '%s'.", url)
         retries = 0
         while True:
@@ -102,7 +104,8 @@ class GitLab():
                 raise ReportError(
                     f"Unable to access '{url}'. Error: {http_err}"
                     ) from http_err
-            except requests.exceptions.ConnectionError as connection_error:
+            except (requests.exceptions.ConnectionError,
+                    ConnectionResetError) as connection_error:
                 retries += 1
                 if retries > GITLAB_ATTEMPTS:
                     raise ReportError(
@@ -116,18 +119,20 @@ class GitLab():
                     )
                 sleep(GITLAB_INTERVAL)
 
-    def _get_gitlab_api(self, endpoint):
+    def _get_gitlab_api(self, endpoint: str) -> requests.Response:
         url = f'{self.url}/api/v{GITLAB_API}/{endpoint}'
         return self._get_gitlab_api_raw(url)
 
-    def _get_gitlab_api_json(self, endpoint):
+    def _get_gitlab_api_json(self, endpoint: str) -> Any:
         log.debug("Query: %s", endpoint)
         result = self._get_gitlab_api(endpoint).json()
         log.data(pretty(result))
         return result
 
-    def _get_gitlab_api_list(
-            self, endpoint, since=None, get_all_results=False):
+    def _get_gitlab_api_list(self,
+                             endpoint: str,
+                             since: Optional[Date] = None,
+                             get_all_results: bool = False) -> list[dict[str, Any]]:
         results = []
         result = self._get_gitlab_api(endpoint)
         result.raise_for_status()
@@ -146,10 +151,10 @@ class GitLab():
                     return results
         return results
 
-    def get_user(self, username):
+    def get_user(self, username: str) -> Any:
         query = f'users?username={username}'
         try:
-            result = self._get_gitlab_api_json(query)
+            result: Any = self._get_gitlab_api_json(query)
         except requests.exceptions.JSONDecodeError as jde:
             raise ReportError(
                 f"Unable to query user '{username}' on {self.url}."
@@ -160,18 +165,21 @@ class GitLab():
             raise ReportError(
                 f"Unable to find user '{username}' on {self.url}.") from exc
 
-    def get_project(self, project_id):
+    def get_project(self, project_id: str) -> Any:
         if project_id not in self.projects:
             query = f'projects/{project_id}'
             self.projects[project_id] = self._get_gitlab_api_json(query)
         return self.projects[project_id]
 
-    def get_project_mr(self, project_id, mr_id):
+    def get_project_mr(self, project_id: str, mr_id: str) -> dict[str, Any]:
         mrs = self.get_project_mrs(project_id)
         mr = next(filter(lambda x: x['id'] == mr_id, mrs), None)
+        if mr is None:
+            raise ReportError(
+                f"Merge request {mr_id} not found in project {project_id}")
         return mr
 
-    def get_project_mrs(self, project_id):
+    def get_project_mrs(self, project_id: str) -> list[dict[str, Any]]:
         if project_id not in self.project_mrs:
             query = f'projects/{project_id}/merge_requests'
 
@@ -197,12 +205,14 @@ class GitLab():
                 query, get_all_results=True)
         return self.project_mrs[project_id]
 
-    def get_project_issue(self, project_id, issue_id):
+    def get_project_issue(self,
+                          project_id: str,
+                          issue_id: str) -> Optional[dict[str, Any]]:
         issues = self.get_project_issues(project_id)
         issue = next(filter(lambda x: x['id'] == issue_id, issues), None)
         return issue
 
-    def get_project_issues(self, project_id):
+    def get_project_issues(self, project_id: str) -> list[dict[str, Any]]:
         if project_id not in self.project_issues:
             query = f'projects/{project_id}/issues'
 
@@ -228,17 +238,25 @@ class GitLab():
                 query, get_all_results=True)
         return self.project_issues[project_id]
 
-    def user_events(self, user_id, since, until):
+    def user_events(self,
+                    user_id: str,
+                    since: Date,
+                    until: Date) -> list[dict[str, Any]]:
         if GITLAB_API < 4:
             # Not supported
             return []
         query = f'users/{user_id}/events?after={since - 1}&before={until}'
         return self._get_gitlab_api_list(query, since, True)
 
-    def search(self, user, since, until, *, target_type, action_name):
+    def search(self,
+               user: str,
+               since: Date,
+               until: Date, *,
+               target_type: str,
+               action_name: str) -> list[dict[str, Any]]:
         """ Perform GitLab query """
-        if not self.user:
-            self.user = self.get_user(user)
+        if self.user is None:
+            self.user = cast(dict[str, Any], self.get_user(user))
         if self.events is None:
             self.events = self.user_events(self.user['id'], since, until)
         result = []
@@ -261,8 +279,11 @@ class GitLab():
 class Issue():
     """ GitLab Issue """
 
-    def __init__(self, data: dict, parent: "GitLabStats", set_id=None):
-        self.parent = parent
+    def __init__(self,
+                 data: dict[str, Any],
+                 parent: "GitLabStatsGroup",
+                 set_id: Optional[str] = None) -> None:
+        self.parent: GitLabStatsGroup = parent
         self.data = data
         self.gitlabapi: GitLab = parent.gitlab
         self.project = self.gitlabapi.get_project(data['project_id'])
@@ -272,25 +293,19 @@ class Issue():
         self.title = data['target_title']
         self._body: Optional[str] = None
 
-    def iid(self):
-        issue = self.gitlabapi.get_project_issue(
-            self.data['project_id'], self.data['target_id'])
+    def iid(self) -> str:
+        my_issue = self.gitlabapi.get_project_issue(
+            self.data['project_id'],
+            self.data['target_id'])
+        if my_issue is None:
+            return "unknown"
+        my_iid: str = my_issue['iid']
+        return my_iid
 
-        if issue is not None:
-            return issue['iid']
-        return "unknown"
-
-    @property
-    def body(self) -> str:
-        """Get full issue description (lazy-loaded)"""
-        if self._body is None:
-            issue_data = self.gitlabapi.get_project_issue(
-                self.data['project_id'], self.data['target_id'])
-            self._body = issue_data.get('description', '') if issue_data else ''
-        return self._body
-
-    def __str__(self):
+    def __str__(self) -> str:
         """ String representation """
+        if self.parent.options is None:
+            raise RuntimeError("GitLabStatsGroup options are not set")
         # Determine endpoint for URL
         endpoint = "merge_requests"
         if self.data['target_type'] == 'Issue' or (
@@ -302,8 +317,8 @@ class Issue():
         label = f"{self.project['path_with_namespace']}#{str(self.id)}"
 
         # Check for full-message mode
-        if getattr(self.parent.options, 'full_message', False) and self.body:
-            body_text = self.body.strip()
+        if getattr(self.parent.options, 'full_message', False) and self._body:
+            body_text = self._body.strip()
             body_lines = [line for line in body_text.split("\n") if line.strip()]
             formatted_body = "\n        ".join(body_lines)
 
@@ -325,6 +340,7 @@ class Issue():
                 f"/-/{endpoint}/{str(self.id)}"
                 )
             return f"[{label}]({href}) - {self.title}"
+        # plain text
         return (
             f"{self.project['path_with_namespace']}"
             f"#{str(self.id).zfill(PADDING)} - {self.title}"
@@ -334,7 +350,10 @@ class Issue():
 class MergeRequest(Issue):
     # pylint: disable=too-few-public-methods
 
-    def __init__(self, data, parent, set_id=None):
+    def __init__(self,
+                 data: dict[str, Any],
+                 parent: GitLabStatsGroup,
+                 set_id: Optional[str] = None) -> None:
         if set_id is None:
             merge_request = parent.gitlab.get_project_mr(
                 data['project_id'], data['target_id'])
@@ -355,12 +374,15 @@ class MergeRequest(Issue):
 class Note(Issue):
     # pylint: disable=too-few-public-methods
 
-    def __init__(self, data, parent, set_id=None):
+    def __init__(self,
+                 data: dict[str, Any],
+                 parent: GitLabStatsGroup,
+                 set_id: Optional[str] = None) -> None:
         if set_id is None:
             set_id = self.note_iid(data, parent.gitlab)
         super().__init__(data, parent, set_id)
 
-    def note_iid(self, data, gitlabapi):
+    def note_iid(self, data: dict[str, Any], gitlabapi: GitLab) -> str:
         if data['note']['noteable_type'] == 'Issue':
             issue = gitlabapi.get_project_issue(
                 data['project_id'],
@@ -369,14 +391,21 @@ class Note(Issue):
             # `noteable_type` is `Issue` even for `WorkItem`s, which
             # aren't returned by `get_project_issue()`
             if issue is not None:
-                return issue['iid']
+                return str(issue['iid'])
             return 'unknown'
         if data['note']['noteable_type'] == 'MergeRequest':
-            merge_request = gitlabapi.get_project_mr(
-                data['project_id'],
-                data['note']['noteable_id'])
+            try:
+                merge_request = gitlabapi.get_project_mr(
+                    data['project_id'],
+                    data['note']['noteable_id'])
+            except ReportError as e:
+                log.warning(
+                    "Error getting merge request: %s. "
+                    "May be due to limiting pagination to %d pages.",
+                    e, GITLAB_MAX_PAGE_LIST)
+                return "unknown"
             if merge_request is not None:
-                return merge_request['iid']
+                return str(merge_request['iid'])
         return "unknown"
 
     @property
@@ -401,10 +430,28 @@ class Note(Issue):
 #  Stats
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-class IssuesCreated(Stats):
+class GitLabStats(Stats):
+
+    def __init__(self, /,
+                 option: str,
+                 name: Optional[str] = None,
+                 parent: Optional[GitLabStatsGroup] = None,
+                 user: Optional[User] = None, *,
+                 options: Optional[Namespace] = None):
+
+        self.user: User
+        self.parent: GitLabStatsGroup
+        self.options: Namespace
+        super().__init__(option, name, parent, user, options=options)
+
+    def fetch(self) -> None:
+        raise NotImplementedError()
+
+
+class IssuesCreated(GitLabStats):
     """ Issue created """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info("Searching for Issues created by %s", self.user)
         results = self.parent.gitlab.search(
             self.user.login, self.options.since, self.options.until,
@@ -415,10 +462,10 @@ class IssuesCreated(Stats):
             for issue in results]
 
 
-class IssuesCommented(Stats):
+class IssuesCommented(GitLabStats):
     """ Issue commented """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info("Searching for Issues commented by %s", self.user)
         results = self.parent.gitlab.search(
             self.user.login, self.options.since, self.options.until,
@@ -430,10 +477,10 @@ class IssuesCommented(Stats):
             if issue['note']['noteable_type'] == 'Issue']
 
 
-class IssuesClosed(Stats):
+class IssuesClosed(GitLabStats):
     """ Issue closed """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info("Searching for Issues closed by %s", self.user)
         results = self.parent.gitlab.search(
             self.user.login, self.options.since, self.options.until,
@@ -444,10 +491,10 @@ class IssuesClosed(Stats):
             for issue in results]
 
 
-class MergeRequestsCreated(Stats):
+class MergeRequestsCreated(GitLabStats):
     """ Merge requests created """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info("Searching for Merge requests created by %s", self.user)
         results = self.parent.gitlab.search(
             self.user.login, self.options.since, self.options.until,
@@ -458,10 +505,10 @@ class MergeRequestsCreated(Stats):
             for mr in results]
 
 
-class MergeRequestsCommented(Stats):
+class MergeRequestsCommented(GitLabStats):
     """ MergeRequests commented """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info("Searching for MergeRequests commented by %s", self.user)
         results = self.parent.gitlab.search(
             self.user.login, self.options.since, self.options.until,
@@ -473,10 +520,10 @@ class MergeRequestsCommented(Stats):
             if issue['note']['noteable_type'] == 'MergeRequest']
 
 
-class MergeRequestsClosed(Stats):
+class MergeRequestsClosed(GitLabStats):
     """ Merge requests closed """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info("Searching for Merge requests closed by %s", self.user)
         results = self.parent.gitlab.search(
             self.user.login, self.options.since, self.options.until,
@@ -487,10 +534,10 @@ class MergeRequestsClosed(Stats):
             for mr in results]
 
 
-class MergeRequestsApproved(Stats):
+class MergeRequestsApproved(GitLabStats):
     """ Merge requests approved """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info("Searching for Merge requests approved by %s", self.user)
         results = self.parent.gitlab.search(
             self.user.login, self.options.since, self.options.until,
@@ -505,13 +552,17 @@ class MergeRequestsApproved(Stats):
 #  Stats Group
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-class GitLabStats(StatsGroup):
+class GitLabStatsGroup(StatsGroup):
     """ GitLab work """
 
     # Default order
     order = 380
 
-    def __init__(self, option, name=None, parent=None, user=None):
+    def __init__(self,
+                 option: str,
+                 name: Optional[str] = None,
+                 parent: Optional[StatsGroup] = None,
+                 user: Optional[User] = None):
         StatsGroup.__init__(self, option, name, parent, user)
         config = dict(Config().section(option))
         # Check server url

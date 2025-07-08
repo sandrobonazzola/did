@@ -33,6 +33,7 @@ It's also possible to set a timeout, if not specified it defaults to
 import datetime
 from enum import Enum
 from functools import total_ordering
+from http import HTTPStatus
 from multiprocessing import cpu_count
 from threading import Thread
 from typing import Any, Dict, List, Optional, Set
@@ -40,12 +41,12 @@ from urllib.parse import urlencode
 
 import requests
 
-from did.base import Config, ConfigError, ReportError, get_token
+from did.base import Config, ConfigError, ReportError, User, get_token
 from did.stats import Stats, StatsGroup
 from did.utils import listed, log, pretty
 
 # Default number of seconds waiting on Phabricator before giving up
-TIMEOUT = 60
+TIMEOUT = 60.0
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #  Investigator
@@ -60,12 +61,16 @@ class Phabricator:
     # https://reviews.llvm.org/conduit/method/differential.revision.search/
     MAX_PAGE_SIZE = 100
 
-    def __init__(self, url, token, logins, timeout=TIMEOUT):
+    def __init__(self,
+                 url: str,
+                 token: str,
+                 logins: list[str],
+                 timeout: float = TIMEOUT) -> None:
         """ Initialize url and headers """
-        self.url = url.rstrip("/")
-        self.token = token
+        self.url: str = url.rstrip("/")
+        self.token: str = token
         self.logins = logins
-        self._login_phids = []
+        self._login_phids: list[str] = []
         self.timeout = timeout
 
     @property
@@ -147,7 +152,9 @@ class Phabricator:
         events = self._get_all_pages(url, data_dict)
         return set(TransactionEvent(event) for event in events)
 
-    def _get_all_pages(self, url: str, data_dict: Dict[str, Any]):
+    def _get_all_pages(self,
+                       url: str,
+                       data_dict: Dict[str, Any]) -> list[dict[str, Any]]:
         """
         Gets all pages of a Phabricator Conduit API request; given that
         the API is pageable.
@@ -173,7 +180,7 @@ class Phabricator:
         log.debug("Results: %s fetched", listed(len(results), "item"))
         return results
 
-    def _get_page(self, url: str, data_dict: Dict[str, Any]):
+    def _get_page(self, url: str, data_dict: Dict[str, Any]) -> dict[str, Any]:
         """
         Gets a single page of a Phabricator Conduit API request
         """
@@ -193,14 +200,14 @@ class Phabricator:
             raise ReportError(
                 f"Phabricator search on '{url}' failed.") from error
 
-        if response.status_code != 200:
+        if response.status_code != HTTPStatus.OK:
             log.debug("Phabricator status code: {response.status.code}")
             raise RuntimeError(
                 "Phabricator request exited with status code "
                 f"{response.status_code} rather than 200.")
 
         try:
-            decoded = response.json()
+            decoded: dict[str, Any] = response.json()
             # Handle API errors
             if decoded["error_info"] is not None:
                 raise RuntimeError(
@@ -258,12 +265,12 @@ class Differential:  # pylint: disable=too-few-public-methods
 
     """
 
-    def __init__(self, data):
-        self._phid = data["phid"]
-        self._uri = data["fields"]["uri"]
-        self._title = data["fields"]["title"]
-        self._id = data["id"]
-        self.events = set()
+    def __init__(self, data: dict[str, Any]) -> None:
+        self._phid: str = data["phid"]
+        self._uri: str = data["fields"]["uri"]
+        self._title: str = data["fields"]["title"]
+        self._id: str = data["id"]
+        self.events: Set["TransactionEvent"] = set()
 
     @property
     def phid(self) -> str:
@@ -293,21 +300,21 @@ class Differential:  # pylint: disable=too-few-public-methods
         """
         return self._id
 
-    def __str__(self):
+    def __str__(self) -> str:
         """ String representation """
         if DifferentialsBaseStats.verbose:
             return f'{self.uri} - {self.title}'
         return f'D{self.id} - {self.title}'
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash(self.phid)
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, Differential):
             return False
         return self.uri == other.uri
 
-    def __lt__(self, other):
+    def __lt__(self, other: "Differential") -> bool:
         return self.uri < other.uri
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -335,7 +342,7 @@ class EventType(Enum):
     STATUS = "status"
     UNDEFINED = ""
 
-    def __str__(self):
+    def __str__(self) -> str:
         """ String representation """
         return self.value
 
@@ -400,11 +407,11 @@ class TransactionEvent:
 
     """
 
-    def __init__(self, data):
-        self._type = data["type"]
-        self._author_phid = data["authorPHID"]
-        self._date_modified = data['dateModified']
-        self._id = data["id"]
+    def __init__(self, data: dict[str, Any]) -> None:
+        self._type: str = data["type"]
+        self._author_phid: str = data["authorPHID"]
+        self._date_modified: float = data['dateModified']
+        self._id: str = data["id"]
 
     def is_in_date_range(
             self,
@@ -437,21 +444,21 @@ class TransactionEvent:
     @property
     def event_type(self) -> EventType:
         """ Returns the type of event """
-        return self._type
+        return EventType(self._type)
 
     @property
     def author_phid(self) -> str:
         """ Returns the author's PHID """
         return self._author_phid
 
-    def __str__(self):
+    def __str__(self) -> str:
         """ String representation """
         return f"{self.author_phid} - {self.event_type} - {self._date_modified}"
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash(self._id)
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, TransactionEvent):
             return False
         return self._id == other._id
@@ -481,7 +488,7 @@ class DifferentialsBaseStats(Stats):
         self.parent: PhabricatorStats
         super().__init__(**kwargs)
 
-    def fetch(self):
+    def fetch(self) -> None:
         """ To be implemented by subclasses """
 
     def fetch_all_relevant_diffs(self) -> None:
@@ -513,7 +520,7 @@ class DifferentialsBaseStats(Stats):
 
         diff_list = list(diffs)
 
-        def process(diff_list, start, end):
+        def process(diff_list: list[Differential], start: int, end: int) -> None:
             for diff in diff_list[start:end]:
                 diff.events = self.parent.phabricator.search_transactions(
                     diff=diff, author_phids=self.parent.phabricator.login_phids)
@@ -559,7 +566,7 @@ class DifferentialsBaseStats(Stats):
 class DifferentialsAccepted(DifferentialsBaseStats):
     """ Differentials accepted """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info("Searching for differentials accepted by '%s'.", self.user)
         self.fetch_all_relevant_diffs()
         self.stats = sorted(DifferentialsBaseStats.diffs_accepted)
@@ -568,7 +575,7 @@ class DifferentialsAccepted(DifferentialsBaseStats):
 class DifferentialsRequestedChanges(DifferentialsBaseStats):
     """ Differentials where changes were requested """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info(
             "Searching for differentials where changes were requested by '%s'.",
             self.user)
@@ -579,7 +586,7 @@ class DifferentialsRequestedChanges(DifferentialsBaseStats):
 class DifferentialsCommented(DifferentialsBaseStats):
     """ Differentials commented """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info("Searching for differentials commented by '%s'.", self.user)
         self.fetch_all_relevant_diffs()
         self.stats = sorted(DifferentialsBaseStats.diffs_commented)
@@ -588,7 +595,7 @@ class DifferentialsCommented(DifferentialsBaseStats):
 class DifferentialsClosed(DifferentialsBaseStats):
     """ Differentials closed """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info("Searching for differentials closed by '%s'.", self.user)
         self.fetch_all_relevant_diffs()
         self.stats = sorted(DifferentialsBaseStats.diffs_closed)
@@ -597,7 +604,7 @@ class DifferentialsClosed(DifferentialsBaseStats):
 class DifferentialsCreated(DifferentialsBaseStats):
     """ Differentials created """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info("Searching for differentials created by '%s'.", self.user)
         self.fetch_all_relevant_diffs()
         self.stats = sorted(DifferentialsBaseStats.diffs_created)
@@ -614,7 +621,11 @@ class PhabricatorStats(StatsGroup):
     # Default order
     order = 360
 
-    def __init__(self, option, name=None, parent=None, user=None):
+    def __init__(self,
+                 option: str,
+                 name: Optional[str] = None,
+                 parent: Optional[StatsGroup] = None,
+                 user: Optional[User] = None) -> None:
         StatsGroup.__init__(self, option, name, parent, user)
         config = dict(Config().section(option))
 
@@ -637,7 +648,7 @@ class PhabricatorStats(StatsGroup):
         if self.logins == ['']:
             raise ConfigError(f"Empty login found in [{option}] section")
         self.phabricator = Phabricator(self.url, self.token, self.logins,
-                                       timeout=config.get("timeout"))
+                                       timeout=float(config.get("timeout", TIMEOUT)))
 
         # Create the list of stats
         self.stats = [

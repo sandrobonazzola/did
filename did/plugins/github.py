@@ -46,13 +46,16 @@ It's also possible to set a timeout, if not specified it defaults to 60 seconds.
 import json
 import re
 import time
+from argparse import Namespace
 from datetime import datetime
+from http import HTTPStatus
+from typing import Any, Optional
 
 import requests
-from tenacity import (RetryError, Retrying, retry_if_exception_type,
-                      stop_after_attempt)
+from tenacity import (RetryCallState, RetryError, Retrying,
+                      retry_if_exception_type, stop_after_attempt)
 
-from did.base import Config, Date, ReportError, get_token
+from did.base import Config, Date, ReportError, User, get_token
 from did.stats import Stats, StatsGroup
 from did.utils import listed, log, pretty
 
@@ -63,7 +66,7 @@ PADDING = 3
 PER_PAGE = 100
 
 # Default number of seconds waiting on GitHub before giving up
-TIMEOUT = 60
+TIMEOUT = 60.0
 
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -74,8 +77,14 @@ class GitHub():
     """ GitHub Investigator """
     # pylint: disable=too-few-public-methods
 
-    def __init__(self, *, url, token=None, user=None,
-                 org=None, repo=None, exclude_org=None, timeout=TIMEOUT):
+    def __init__(self, *,
+                 url: str,
+                 token: Optional[str] = None,
+                 user: Optional[str] = None,
+                 org: Optional[str] = None,
+                 repo: Optional[str] = None,
+                 exclude_org: Optional[str] = None,
+                 timeout: float = TIMEOUT) -> None:
         """ Initialize url and headers """
         self.url = url.rstrip("/")
         self.timeout = timeout
@@ -85,7 +94,7 @@ class GitHub():
             self.headers = {}
 
         # Prepare the org, user, repo filter
-        def condition(key: str, names: str) -> list[str]:
+        def condition(key: str, names: Optional[str]) -> list[str]:
             """ Prepare one or more conditions for given key & names """
             if not names:
                 return []
@@ -99,10 +108,10 @@ class GitHub():
             )
 
     def commented_in_range(self,
-                           commented_issues: list,
+                           commented_issues: list[dict[str, Any]],
                            since: datetime,
                            until: datetime,
-                           login: str) -> list:
+                           login: str) -> list[dict[str, Any]]:
         valid_issues = []
         for issue in commented_issues:
             issue_since = since
@@ -112,8 +121,16 @@ class GitHub():
                 f"?per_page={PER_PAGE}&since={issue_since.isoformat()}"
                 )
             while not issue_checked:
-                response = self.request(url)
-                comments = response.json()
+                try:
+                    response = self.request(url)
+                    comments = response.json()
+                except requests.exceptions.RequestException as e:
+                    log.error("Failed to fetch or parse comments from GitHub: %s", e)
+                    continue
+                except ValueError as e:
+                    # Handles JSON decode error
+                    log.error("Failed to decode JSON from response at %s: %s", url, e)
+                    continue
                 log.debug("%s comments fetched for %s", len(comments), url)
                 log.data(pretty(comments))
                 for comment in comments:
@@ -136,18 +153,21 @@ class GitHub():
         return valid_issues
 
     @staticmethod
-    def until(until):
+    def until(until: Date) -> Date:
         """Issue #362: until for GH should have - delta(day=1)"""
         return Date(until - 1)
 
-    def request(self, url):
+    def request(self, url: str) -> requests.Response:
+        def github_before_sleep(_retry_state: RetryCallState) -> None:
+            log.debug("Trying to connect to GitHUb...")
         while True:
             try:
                 for attempt in Retrying(
                         stop=stop_after_attempt(3),
-                        retry=retry_if_exception_type(
-                            requests.exceptions.ConnectionError),
-                        before_sleep=log.debug("Trying to connect to GitHUb..."),
+                        retry=retry_if_exception_type((
+                            requests.exceptions.ConnectionError,
+                            ConnectionResetError)),
+                        before_sleep=github_before_sleep,
                         reraise=True):
                     with attempt:
                         response = requests.get(
@@ -159,13 +179,16 @@ class GitHub():
                 raise ReportError(f"GitHub request on {self.url} failed.") from error
             # Check if credentials are valid
             log.debug("GitHub status code: %s", response.status_code)
-            if response.status_code == 401:
+            if response.status_code == HTTPStatus.UNAUTHORIZED:
                 raise ReportError(
                     "Defined token is not valid. "
                     "Either update it or remove it.")
 
             # Handle the exceeded rate limit
-            if response.status_code in [403, 429]:
+            if response.status_code in (
+                    HTTPStatus.FORBIDDEN,
+                    HTTPStatus.TOO_MANY_REQUESTS
+                    ):
                 if response.headers.get("X-RateLimit-Remaining") == "0":
                     reset_time = int(response.headers["X-RateLimit-Reset"])
                     sleep_time = int(max(reset_time - time.time(), 0)) + 1
@@ -179,7 +202,7 @@ class GitHub():
 
         return response
 
-    def search(self, query):
+    def search(self, query: str) -> list[dict[str, Any]]:
         """ Perform GitHub query """
         result = []
         url = f"{self.url}/{query}{self.filter}&per_page={PER_PAGE}"
@@ -226,17 +249,21 @@ class GitHub():
 class Issue():
     """ GitHub Issue """
 
-    def __init__(self, data, parent):
+    def __init__(self, data: dict[str, Any], parent: Stats):
+        if parent.options is None:
+            raise RuntimeError("Issue Stats parent options not initialized")
         self.data = data
-        self.title = data["title"]
+        self.title: str = data["title"]
         matched = re.search(
             r"/repos/([^/]+)/([^/]+)/issues/(\d+)", data["url"])
-        self.owner = matched.groups()[0]
-        self.project = matched.groups()[1]
-        self.id = matched.groups()[2]
-        self.options = parent.options
+        if matched is None:
+            raise RuntimeError("Malformed GitHub Issue data")
+        self.owner: str = matched.groups()[0]
+        self.project: str = matched.groups()[1]
+        self.id: str = matched.groups()[2]
+        self.options: Namespace = parent.options
 
-    def __str__(self):
+    def __str__(self) -> str:
         """ String representation """
         label = f"{self.owner}/{self.project}#{str(self.id).zfill(PADDING)}"
         title = self.data["title"].strip() if self.data.get("title") else ""
@@ -258,7 +285,7 @@ class Issue():
             return f'[{label}]({self.data["html_url"]}) - {title}'
         return f'{label} - {title}'
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
         """ Equality comparison """
         if isinstance(other, Issue):
             return (
@@ -267,7 +294,7 @@ class Issue():
                 and self.id == other.id)
         return False
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         """ Hash function """
         return hash((self.owner, self.project, self.id))
 
@@ -276,10 +303,28 @@ class Issue():
 #  Stats
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-class IssuesCreated(Stats):
+
+class GitHubStats(Stats):
+    """ GitHub Stats """
+
+    def __init__(self,
+                 option: str,
+                 name: Optional[str] = None,
+                 parent: Optional["GitHubStatsGroup"] = None,
+                 user: Optional[User] = None):
+        self.parent: GitHubStatsGroup
+        self.user: User
+        self.options: Namespace
+        super().__init__(option, name, parent, user)
+
+    def fetch(self) -> None:
+        raise NotImplementedError("fetch() not implemented")
+
+
+class IssuesCreated(GitHubStats):
     """ Issues created """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info("Searching for issues created by %s", self.user)
         login = self.user.login
         since = self.options.since
@@ -289,10 +334,10 @@ class IssuesCreated(Stats):
             Issue(issue, self.parent) for issue in self.parent.github.search(query)]
 
 
-class IssuesClosed(Stats):
+class IssuesClosed(GitHubStats):
     """ Issues closed """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info("Searching for issues closed by %s", self.user)
         login = self.user.login
         since = self.options.since
@@ -302,10 +347,10 @@ class IssuesClosed(Stats):
             Issue(issue, self.parent) for issue in self.parent.github.search(query)]
 
 
-class IssueCommented(Stats):
+class IssueCommented(GitHubStats):
     """ Issues commented """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info("Searching for issues commented on by %s", self.user)
         login = self.user.login
         since = self.options.since
@@ -323,10 +368,10 @@ class IssueCommented(Stats):
             Issue(issue, self.parent) for issue in valid_issues]
 
 
-class PullRequestsCreated(Stats):
+class PullRequestsCreated(GitHubStats):
     """ Pull requests created """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info("Searching for pull requests created by %s", self.user)
         login = self.user.login
         since = self.options.since
@@ -336,10 +381,10 @@ class PullRequestsCreated(Stats):
             Issue(issue, self.parent) for issue in self.parent.github.search(query)]
 
 
-class PullRequestsCommented(Stats):
+class PullRequestsCommented(GitHubStats):
     """ Pull requests commented """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info("Searching for pull requests commented on by %s", self.user)
         login = self.user.login
         since = self.options.since
@@ -357,10 +402,10 @@ class PullRequestsCommented(Stats):
             Issue(issue, self.parent) for issue in valid_issues]
 
 
-class PullRequestsClosed(Stats):
+class PullRequestsClosed(GitHubStats):
     """ Pull requests closed """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info("Searching for pull requests closed by %s", self.user)
         login = self.user.login
         since = self.options.since
@@ -370,10 +415,10 @@ class PullRequestsClosed(Stats):
             Issue(issue, self.parent) for issue in self.parent.github.search(query)]
 
 
-class PullRequestsReviewed(Stats):
+class PullRequestsReviewed(GitHubStats):
     """ Pull requests reviewed """
 
-    def fetch(self):
+    def fetch(self) -> None:
         log.info("Searching for pull requests reviewed by %s", self.user)
         login = self.user.login
         since = self.options.since
@@ -390,19 +435,23 @@ class PullRequestsReviewed(Stats):
 #  Stats Group
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-class GitHubStats(StatsGroup):
+class GitHubStatsGroup(StatsGroup):
     """ GitHub work """
 
     # Default order
     order = 330
 
-    def __init__(self, option, name=None, parent=None, user=None):
+    def __init__(self,
+                 option: str,
+                 name: Optional[str] = None,
+                 parent: Optional[StatsGroup] = None,
+                 user: Optional[User] = None):
         StatsGroup.__init__(self, option, name, parent, user)
         config = dict(Config().section(option))
 
         # Check server url
         try:
-            self.url = config["url"]
+            self.url: str = config["url"]
         except KeyError as keyerr:
             raise ReportError(
                 f"No github url set in the [{option}] section") from keyerr
@@ -416,7 +465,7 @@ class GitHubStats(StatsGroup):
             user=config.get("user"),
             repo=config.get("repo"),
             exclude_org=config.get("exclude_org"),
-            timeout=config.get("timeout"))
+            timeout=float(config.get("timeout", TIMEOUT)))
 
         # Create the list of stats
         self.stats = [

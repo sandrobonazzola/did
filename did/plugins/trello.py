@@ -40,13 +40,16 @@ Optional arguments::
 # Possible API methods to add:
 # http://developers.trello.com/advanced-reference/member
 
+import datetime
 import json
 import urllib.parse
 import urllib.request
+from argparse import Namespace
+from typing import Any, Optional
 
-from did.base import Config, ReportError, get_token
+from did.base import Config, ReportError, User, get_token
 from did.stats import Stats, StatsGroup
-from did.utils import listed, log, pretty, split
+from did.utils import log, pretty, split
 
 DEFAULT_FILTERS = [
     "commentCard", "createCard", "updateCard",
@@ -61,13 +64,21 @@ DEFAULT_FILTERS = [
 class TrelloStats(Stats):
     """ Trello stats """
 
-    def __init__(self, *, trello, filt, option, name=None, parent=None):
+    def __init__(self, *,
+                 trello: Optional["TrelloAPI"],
+                 filt: str,
+                 option: str,
+                 name: Optional[str] = None,
+                 parent: Optional["TrelloStatsGroup"] = None,
+                 options: Optional[Namespace] = None) -> None:
+        self.options: Namespace
+        self.parent: TrelloStatsGroup
         super().__init__(option=option, name=name, parent=parent,
-                         options=parent.options)
+                         options=options)
         self.filt = filt
-        self.trello = trello
+        self.trello: Optional[TrelloAPI] = trello
 
-    def fetch(self):
+    def fetch(self) -> None:
         """ Fetch the stats (to be implemented by respective class). """
         raise NotImplementedError()
 
@@ -79,16 +90,20 @@ class TrelloStats(Stats):
 class TrelloAPI():
     """ Trello API """
 
-    def __init__(self, stats, config):
-        self.stats = stats
+    def __init__(self, stats: "TrelloStatsGroup", config: dict[str, str]) -> None:
+        self.stats: TrelloStatsGroup = stats
 
-        self.key = config['apikey']
-        self.token = config['token']
-        self.username = config['user'] if "user" in config else "me"
-        self.board_links = split(config['board_links'])
-        self.board_ids = self.board_links_to_ids()
+        self.key: str = config['apikey']
+        self.token: str = config['token']
+        self.username: str = config['user'] if "user" in config else "me"
+        self.board_links: list[str] = split(config['board_links'])
+        self.board_ids: list[str] = self.board_links_to_ids()
 
-    def get_actions(self, filters, since=None, before=None, limit=1000):
+    def get_actions(self,
+                    filter_param: str,
+                    since: Optional[datetime.date] = None,
+                    before: Optional[datetime.date] = None,
+                    limit: int = 1000) -> list[dict[str, Any]]:
         """
         Example of data structure:
         https://api.trello.com/1/members/ben/actions?limit=2
@@ -99,22 +114,23 @@ class TrelloAPI():
         actions = urllib.parse.urlencode({
             "key": self.key,
             "token": self.token,
-            "filter": filters,
+            "filter": filter_param,
             "limit": limit,
             "since": str(since),
             "before": str(before)})
         resp = self.stats.session.open(
             f"{self.stats.url}/members/{self.username}/actions?{actions}")
 
-        actions = json.loads(resp.read())
-        log.data(pretty(actions))
+        json_actions = json.loads(resp.read())
+        log.data(pretty(json_actions))
         # print[act for act in actions if "shortLink" not in
         # act['data']['board'].keys()]
-        actions = [act for act in actions if act['data']
-                   ['board']['id'] in self.board_ids]
-        return actions
+        dict_actions = [act
+                        for act in json_actions
+                        if act['data']['board']['id'] in self.board_ids]
+        return dict_actions
 
-    def board_links_to_ids(self):
+    def board_links_to_ids(self) -> list[str]:
         """ Convert board links to ids """
         encoded_query = urllib.parse.urlencode(
             {
@@ -138,14 +154,16 @@ class TrelloAPI():
 class TrelloCardsCreated(TrelloStats):
     """ Trello cards created """
 
-    def fetch(self):
+    def fetch(self) -> None:
+        if self.trello is None:
+            raise RuntimeError("Trello API not initialized")
         log.info(
             "Searching for cards created in %s by %s",
             self.parent.option, self.user)
         actions = [
             act['data']['card']['name']
             for act in self.trello.get_actions(
-                filters=self.filt,
+                filter_param=self.filt,
                 since=self.options.since.date,
                 before=self.options.until.date)]
         self.stats = sorted(list(set(actions)))
@@ -158,14 +176,16 @@ class TrelloCardsCreated(TrelloStats):
 class TrelloCardsUpdated(TrelloStats):
     """ Trello cards updated"""
 
-    def fetch(self):
+    def fetch(self) -> None:
+        if self.trello is None:
+            raise RuntimeError("Trello API not initialized")
         log.info(
             "Searching for cards updated in %s by %s",
             self.parent.option, self.user)
         actions = [
             act['data']['card']['name']
             for act in self.trello.get_actions(
-                filters=self.filt,
+                filter_param=self.filt,
                 since=self.options.since.date,
                 before=self.options.until.date)]
         self.stats = sorted(list(set(actions)))
@@ -174,14 +194,16 @@ class TrelloCardsUpdated(TrelloStats):
 class TrelloCardsCommented(TrelloStats):
     """ Trello cards commented"""
 
-    def fetch(self):
+    def fetch(self) -> None:
+        if self.trello is None:
+            raise RuntimeError("Trello API not initialized")
         log.info(
             "Searching for cards commented in %s by %s",
             self.parent.option, self.user)
         actions = [
             act['data']['card']['name']
             for act in self.trello.get_actions(
-                filters=self.filt,
+                filter_param=self.filt,
                 since=self.options.since.date,
                 before=self.options.until.date)]
         self.stats = sorted(list(set(actions)))
@@ -194,7 +216,9 @@ class TrelloCardsCommented(TrelloStats):
 class TrelloCardsClosed(TrelloStats):
     """ Trello cards closed"""
 
-    def fetch(self):
+    def fetch(self) -> None:
+        if self.trello is None:
+            raise RuntimeError("Trello API not initialized")
         log.info(
             "Searching for cards closed in %s by %s",
             self.parent.option, self.user)
@@ -203,7 +227,7 @@ class TrelloCardsClosed(TrelloStats):
         actions = [
             f"{act['data']['card']['name']}: {status[act['data']['card']['closed']]}"
             for act in self.trello.get_actions(
-                filters=self.filt,
+                filter_param=self.filt,
                 since=self.options.since.date,
                 before=self.options.until.date)
             ]
@@ -218,7 +242,9 @@ class TrelloCardsClosed(TrelloStats):
 class TrelloCardsMoved(TrelloStats):
     """ Trello cards moved"""
 
-    def fetch(self):
+    def fetch(self) -> None:
+        if self.trello is None:
+            raise RuntimeError("Trello API not initialized")
         log.info(
             "Searching for cards moved in %s by %s",
             self.parent.option, self.user)
@@ -227,7 +253,7 @@ class TrelloCardsMoved(TrelloStats):
              f" moved from [{act['data']['listBefore']['name']}]"
              f" to [{act['data']['listAfter']['name']}]")
             for act in self.trello.get_actions(
-                filters=self.filt,
+                filter_param=self.filt,
                 since=self.options.since.date,
                 before=self.options.until.date)]
 
@@ -241,14 +267,16 @@ class TrelloCardsMoved(TrelloStats):
 class TrelloCheckItem(TrelloStats):
     """ Trello checklist items completed"""
 
-    def fetch(self):
+    def fetch(self) -> None:
+        if self.trello is None:
+            raise RuntimeError("Trello API not initialized")
         log.info(
             "Searching for CheckItem completed in %s by %s",
             self.parent.option, self.user)
         actions = [
             f"{act['data']['card']['name']}: {act['data']['checkItem']['name']}"
             for act in self.trello.get_actions(
-                filters=self.filt,
+                filter_param=self.filt,
                 since=self.options.since.date,
                 before=self.options.until.date)]
         self.stats = sorted(list(set(actions)))
@@ -264,12 +292,16 @@ class TrelloStatsGroup(StatsGroup):
     # Default order
     order = 450
 
-    def __init__(self, option, name=None, parent=None, user=None):
+    def __init__(self,
+                 option: str,
+                 name: Optional[str] = None,
+                 parent: Optional[StatsGroup] = None,
+                 user: Optional[User] = None) -> None:
         name = f"Trello updates for {option}"
         super().__init__(option=option, name=name, parent=parent, user=user)
 
         # map appropriate API methods to Classes
-        filter_map = {
+        filter_map: dict[str, dict[str, type[TrelloStats]]] = {
             'Boards': {},
             'Lists': {},
             'Cards': {
@@ -281,18 +313,18 @@ class TrelloStatsGroup(StatsGroup):
             'Checklists': {
                 'updateCheckItemStateOnCard': TrelloCheckItem}
             }
-        self._session = None
-        self.url = "https://trello.com/1"
+        self._session: Optional[urllib.request.OpenerDirector] = None
+        self.url: str = "https://trello.com/1"
         config = dict(Config().section(option))
-
-        config["token"] = get_token(config)
+        token = get_token(config)
+        if token is not None:
+            config["token"] = token
         positional_args = ['apikey', 'token']
         if (not set(positional_args).issubset(set(config.keys()))
                 and "user" not in config):
-            listed_args = listed(positional_args, quote="'")
             raise ReportError(
-                f"No ({listed_args}) or 'user' set in the [{option}] section")
-
+                f"""No ('{"' and '".join(positional_args)}') """
+                f"or 'user' set in the [{option}] section")
         optional_args = ["board_links", "apikey"]
         for arg in optional_args:
             if arg not in config:
@@ -319,7 +351,7 @@ class TrelloStatsGroup(StatsGroup):
                     parent=self))
 
     @property
-    def session(self):
+    def session(self) -> urllib.request.OpenerDirector:
         """ Initialize the session """
         if self._session is None:
             self._session = urllib.request.build_opener(

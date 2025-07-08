@@ -3,6 +3,7 @@
 
 import logging
 
+import pytest
 from _pytest.logging import LogCaptureFixture
 
 import did.base
@@ -19,7 +20,7 @@ url = https://lists.centos.org/hyperkitty/list/virt@lists.centos.org/
 #  Week mails
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-def test_week():
+def test_week() -> None:
     """ Check all stats for given week """
     did.base.Config(CONFIG)
     stats = did.cli.main("--email sbonazzo@redhat.com")
@@ -30,7 +31,7 @@ def test_week():
 #  No mails posted
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-def test_none():
+def test_none() -> None:
     """ Check new mail threads started by the user """
     did.base.Config(CONFIG)
     stats = did.cli.main([
@@ -45,7 +46,7 @@ def test_none():
 #  New mails started
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-def test_started():
+def test_started() -> None:
     """ Check new mail threads started by the user """
     did.base.Config(CONFIG)
     stats = did.cli.main([
@@ -60,7 +61,7 @@ def test_started():
         for msg in stats)
 
 
-def test_markdown(capsys):
+def test_markdown(capsys: pytest.CaptureFixture[str]) -> None:
     """ Check markdown output """
     did.base.Config(CONFIG)
     did.cli.main([
@@ -80,7 +81,7 @@ def test_markdown(capsys):
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
-def test_virt_involved():
+def test_virt_involved() -> None:
     """ Check new mail threads the user was involved in """
     did.base.Config(CONFIG)
     stats = did.cli.main([
@@ -98,7 +99,7 @@ def test_virt_involved():
         "CAPQRNTn8tnW48QHJ=Lnb-5bOtOi14rYrc84knon4nRVuBAaj=w@mail.gmail.com"
 
 
-def test_missing_url(caplog: LogCaptureFixture):
+def test_missing_url(caplog: LogCaptureFixture) -> None:
     did.base.Config("[virt]\ntype = hyperkitty\n")
     with caplog.at_level(logging.ERROR):
         did.cli.main([

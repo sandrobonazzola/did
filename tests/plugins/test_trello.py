@@ -31,7 +31,7 @@ user = didtester
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 @pytest.mark.skip("HTTP Error 401: Unauthorized")
-def test_trello_cards_commented():
+def test_trello_cards_commented() -> None:
     """ Commented cards """
     did.base.Config(CONFIG)
     stats = did.cli.main(INTERVAL)[0][0].stats[0].stats[0].stats
@@ -39,7 +39,7 @@ def test_trello_cards_commented():
 
 
 @pytest.mark.skip("HTTP Error 401: Unauthorized")
-def test_trello_cards_created():
+def test_trello_cards_created() -> None:
     """ Created cards """
     did.base.Config(CONFIG)
     stats = did.cli.main(INTERVAL)[0][0].stats[0].stats[1].stats
@@ -47,7 +47,7 @@ def test_trello_cards_created():
 
 
 @pytest.mark.skip("HTTP Error 401: Unauthorized")
-def test_trello_cards_updated():
+def test_trello_cards_updated() -> None:
     """ Updated cards """
     did.base.Config(CONFIG)
     stats = did.cli.main(INTERVAL)[0][0].stats[0].stats[2].stats
@@ -55,7 +55,7 @@ def test_trello_cards_updated():
 
 
 @pytest.mark.skip("HTTP Error 401: Unauthorized")
-def test_trello_cards_closed():
+def test_trello_cards_closed() -> None:
     """ Closed cards """
     did.base.Config(CONFIG)
     stats = did.cli.main(INTERVAL)[0][0].stats[0].stats[3].stats
@@ -63,7 +63,7 @@ def test_trello_cards_closed():
 
 
 @pytest.mark.skip("HTTP Error 401: Unauthorized")
-def test_trello_cards_moved():
+def test_trello_cards_moved() -> None:
     """ Moved cards """
     did.base.Config(CONFIG)
     stats = did.cli.main(INTERVAL)[0][0].stats[0].stats[4].stats
@@ -73,7 +73,7 @@ def test_trello_cards_moved():
 
 
 @pytest.mark.skip("HTTP Error 401: Unauthorized")
-def test_trello_checklists_checkitem():
+def test_trello_checklists_checkitem() -> None:
     """ Completed Checkitems in checklists """
     did.base.Config(CONFIG)
     stats = did.cli.main(INTERVAL)[0][0].stats[0].stats[5].stats
@@ -82,7 +82,7 @@ def test_trello_checklists_checkitem():
         in str(stat) for stat in stats)
 
 
-def test_trello_missing_username(caplog: LogCaptureFixture):
+def test_trello_missing_username(caplog: LogCaptureFixture) -> None:
     """ Missing username """
     did.base.Config("""
                 [general]

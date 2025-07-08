@@ -15,7 +15,7 @@ repos:
           - --max-line-length=88
 
   - repo: https://github.com/PyCQA/isort
-    rev: "7.0.0"
+    rev: "8.0.0"
     hooks:
       - id: isort
 
@@ -57,7 +57,7 @@ repos:
         exclude: disable_test_trac.py
 
   - repo: https://github.com/pylint-dev/pylint
-    rev: "v4.0.2"
+    rev: "v4.0.5"
     hooks:
       - id: pylint
         args:
@@ -83,7 +83,7 @@ repos:
           ]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: 'v1.18.2'
+    rev: 'v1.19.1'
     hooks:
       - id: mypy
         exclude: examples/.*|bin/did
@@ -106,3 +106,4 @@ repos:
             types-setuptools,
             types-urllib3,
         ]
+        args: [--strict]

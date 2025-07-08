@@ -31,27 +31,27 @@ did = {0}
 #  Smoke
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-def test_git_smoke():
+def test_git_smoke() -> None:
     """ Git smoke """
     did.base.Config(CONFIG.format(GIT_PATH))
     did.cli.main(INTERVAL)
 
 
-def test_git_verbosity():
+def test_git_verbosity() -> None:
     """ Brief git stats """
     did.base.Config(CONFIG.format(GIT_PATH))
     did.cli.main(f"{INTERVAL} --brief")
     did.cli.main(f"{INTERVAL} --verbose")
 
 
-def test_git_format():
+def test_git_format() -> None:
     """ Wiki format """
     did.base.Config(CONFIG.format(GIT_PATH))
     did.cli.main(f"{INTERVAL} --format text")
     did.cli.main(f"{INTERVAL} --format wiki")
 
 
-def test_git_team():
+def test_git_team() -> None:
     """ Team report """
     emails = "--email psplicha@redhat.com,cward@redhat.com"
     did.base.Config(CONFIG.format(GIT_PATH))
@@ -64,7 +64,7 @@ def test_git_team():
 #  Content
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-def test_git_regular():
+def test_git_regular() -> None:
     """ Simple git stats """
     did.base.Config(CONFIG.format(GIT_PATH))
     stats = did.cli.main(INTERVAL)[0][0].stats[0].stats[0].stats
@@ -73,14 +73,14 @@ def test_git_regular():
         for stat in stats)
 
 
-def test_git_verbose():
+def test_git_verbose() -> None:
     """ Verbose git stats """
     did.base.Config(CONFIG.format(GIT_PATH))
     stats = did.cli.main(f"{INTERVAL} --verbose")[0][0].stats[0].stats[0].stats
     assert any("tests/plugins" in stat for stat in stats)
 
 
-def test_git_nothing():
+def test_git_nothing() -> None:
     """ No stats found """
     did.base.Config(CONFIG.format(GIT_PATH))
     stats = did.cli.main("--until 2015-01-01")[0][0].stats[0].stats[0].stats
@@ -91,7 +91,7 @@ def test_git_nothing():
 #  Errors
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-def test_git_invalid():
+def test_git_invalid() -> None:
     """ Invalid git repo """
     did.base.Config(CONFIG.format("/tmp"))
     try:
@@ -100,7 +100,7 @@ def test_git_invalid():
         raise RuntimeError("Expected warning only") from exc
 
 
-def test_git_non_existent(caplog: LogCaptureFixture):
+def test_git_non_existent(caplog: LogCaptureFixture) -> None:
     """ Non-existent git repo """
     did.base.Config(CONFIG.format("i-do-not-exist"))
     with caplog.at_level(logging.ERROR):
