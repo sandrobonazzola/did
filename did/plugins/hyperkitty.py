@@ -19,6 +19,7 @@ import datetime
 import email.utils
 import gzip
 import mailbox
+import os
 import tempfile
 import urllib.parse
 from argparse import Namespace
@@ -131,18 +132,27 @@ class Hyperkitty():
                 opt.width = 0
                 item(self._get_message_url(msg), level=2, options=opt)
 
-    def __get_mbox_from_content(self, content: bytes) -> mailbox.mbox:
+    def __get_mbox_from_content(self, content: bytes) -> list[Message]:
         """
         :param content: a blob of data compressed with gzip algorithm
-        :returns: a mailbox.mbox object built from the given content
+        :returns: a list of Message objects built from the given content
         """
         content = gzip.decompress(content)
-
-        with tempfile.NamedTemporaryFile() as tmp:
-            tmp.write(content)
-            tmp.seek(0)
-
-            return mailbox.mbox(tmp.name)
+        msgs: list[Message]
+        try:
+            with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                tmp.write(content)
+            mbox = mailbox.mbox(tmp.name)
+            try:
+                msgs = self.__get_msgs_from_mbox(mbox)
+            finally:
+                mbox.close()
+        finally:
+            try:
+                os.unlink(tmp.name)
+            except OSError:
+                pass
+        return msgs
 
     def __get_msgs_from_mbox(self, mbox: mailbox.mbox) -> list[Message]:
         """
@@ -181,8 +191,7 @@ class Hyperkitty():
         log.debug("Fetching message %s thread (%s)", msg_id, url)
         resp = requests.get(url, timeout=self.timeout)
         resp.raise_for_status()
-        mbox = self.__get_mbox_from_content(resp.content)
-        for msg in self.__get_msgs_from_mbox(mbox):
+        for msg in self.__get_mbox_from_content(resp.content):
             if msg.is_thread_root():
                 log.debug("Found message %s thread root: %s.", msg_id, msg.id())
                 return msg
@@ -249,8 +258,7 @@ class Hyperkitty():
             log.error("Response is not ok: %s", str(resp))
             return []
 
-        mbox = self.__get_mbox_from_content(resp.content)
-        return self.__get_msgs_from_mbox(mbox)
+        return self.__get_mbox_from_content(resp.content)
 
     def get_all_threads(self, since: Date, until: Date) -> Iterable[Message]:
         log.debug("Fetching all threads since %s until %s.", since, until)
