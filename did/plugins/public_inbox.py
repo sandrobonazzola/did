@@ -18,6 +18,7 @@ import datetime
 import email.utils
 import gzip
 import mailbox
+import os
 import tempfile
 import urllib.parse
 from argparse import Namespace
@@ -125,14 +126,22 @@ class PublicInbox():
                 opt.width = 0
                 item(self._get_message_url(msg), level=2, options=opt)
 
-    def __get_mbox_from_content(self, content: bytes) -> mailbox.mbox:
+    def __get_mbox_from_content(self, content: bytes) -> list[Message]:
         content = gzip.decompress(content)
-
-        with tempfile.NamedTemporaryFile() as tmp:
-            tmp.write(content)
-            tmp.seek(0)
-
-            return mailbox.mbox(tmp.name)
+        try:
+            with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                tmp.write(content)
+            mbox = mailbox.mbox(tmp.name)
+            try:
+                msgs = self.__get_msgs_from_mbox(mbox)
+            finally:
+                mbox.close()
+        finally:
+            try:
+                os.unlink(tmp.name)
+            except OSError:
+                pass
+        return msgs
 
     def __get_msgs_from_mbox(self, mbox: mailbox.mbox) -> list[Message]:
         msgs = []
@@ -181,8 +190,7 @@ class PublicInbox():
                 f"The public inbox search failed ({response.reason})."
                 ) from error
 
-        mbox = self.__get_mbox_from_content(response.content)
-        for msg in self.__get_msgs_from_mbox(mbox):
+        for msg in self.__get_mbox_from_content(response.content):
             if msg.is_thread_root():
                 log.debug("Found message %s thread root: %s.", msg_id, msg.id())
                 return msg
@@ -241,8 +249,7 @@ class PublicInbox():
             log.error("Response is not ok: %s", str(resp))
             return []
 
-        mbox = self.__get_mbox_from_content(resp.content)
-        return self.__get_msgs_from_mbox(mbox)
+        return self.__get_mbox_from_content(resp.content)
 
     def get_all_threads(self, since: Date, until: Date) -> Iterable[Message]:
         if (since, until) not in self.threads_cache:
